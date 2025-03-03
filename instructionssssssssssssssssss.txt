@@ -1,0 +1,491 @@
+ssh -i C:\Users\hamza\Downloads\outgoingcall-ssh-key-2025-02-06.key ubuntu@79.72.51.70
+
+rm -rf tfrtita333
+
+Empty the file:
+
+
+
+truncate -s 0 deploy.sh
+
+
+
+open and edit the file :
+
+ 
+
+nano deploy.sh
+
+
+
+truncate -s 0 \backend\appdatabase.py
+
+
+nano \backend\appdatabase.py
+
+
+
+
+----------------------------
+
+
+
+
+past  this code : 
+
+
+
+
+
+
+#!/bin/bash
+set -e
+
+# -----------------------------------------------------------
+# CONFIGURATION VARIABLES
+# -----------------------------------------------------------
+DOMAIN="ajingolik.fun"
+EMAIL="hamzameliani1@gmail.com"
+
+# MySQL Configuration
+MYSQL_ROOT_PASSWORD="AFINasahbi@-11"
+MYSQL_USER="hamza"
+MYSQL_PASSWORD="AFINasahbi@-11"
+MYSQL_DATABASE="voice_call_ai"
+
+# Absolute paths (assumes deploy.sh is in the repository root)
+APP_DIR="$(pwd)"
+BACKEND_DIR="${APP_DIR}/backend"
+FRONTEND_DIR="${APP_DIR}/frontend"
+WEB_ROOT="/var/www/${DOMAIN}/html"
+SERVICE_FILE="/etc/systemd/system/tfrtita333.service"
+
+# -----------------------------------------------------------
+# Logging helper
+# -----------------------------------------------------------
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+# -----------------------------------------------------------
+# I. SYSTEM PREPARATION
+# -----------------------------------------------------------
+log "Updating system packages..."
+sudo apt update && sudo apt upgrade -y
+
+log "Installing required packages..."
+sudo apt install -y nginx certbot python3-certbot-nginx ufw git python3 python3-pip python3-venv \
+    libyaml-dev nodejs dos2unix mysql-server mysql-client libmysqlclient-dev python3-dev npm
+
+# Ensure deploy.sh has Unix line endings
+dos2unix deploy.sh
+
+log "Configuring UFW firewall..."
+sudo ufw allow OpenSSH
+sudo ufw allow "Nginx Full"
+sudo ufw allow 8000
+sudo ufw allow mysql
+sudo ufw --force enable
+sudo ufw status
+
+# -----------------------------------------------------------
+# IPtables RULES
+# -----------------------------------------------------------
+log "Configuring iptables rules..."
+sudo mkdir -p /etc/iptables
+sudo tee /etc/iptables/rules.v4 > /dev/null <<'EOF'
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+# Allow established connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# Allow loopback interface
+-A INPUT -i lo -j ACCEPT
+# Allow SSH (port 22)
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT
+# Allow HTTP (port 80)
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT
+# Allow HTTPS (port 443)
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT
+# Allow MySQL (port 3306)
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 3306 -j ACCEPT
+# Allow additional port (e.g., 8000)
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8000 -j ACCEPT
+# Drop all other incoming traffic
+-A INPUT -j DROP
+COMMIT
+EOF
+
+sudo iptables-restore < /etc/iptables/rules.v4
+
+# -----------------------------------------------------------
+# II. MYSQL SETUP
+# -----------------------------------------------------------
+log "Setting up MySQL..."
+
+# Secure MySQL installation
+sudo mysql --user=root <<EOF
+  ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASSWORD}';
+  DELETE FROM mysql.user WHERE User='';
+  DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+  DROP DATABASE IF EXISTS test;
+  DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+  CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASSWORD}';
+  GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'localhost';
+  FLUSH PRIVILEGES;
+EOF
+
+# Create MySQL tables
+sudo mysql --user=${MYSQL_USER} --password=${MYSQL_PASSWORD} ${MYSQL_DATABASE} <<'EOF'
+CREATE TABLE IF NOT EXISTS users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS calls (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    call_sid VARCHAR(255),
+    from_number VARCHAR(50),
+    to_number VARCHAR(50),
+    direction VARCHAR(20),
+    duration INT,
+    status VARCHAR(50),
+    start_time DATETIME,
+    end_time DATETIME,
+    recording_url TEXT,
+    transcription TEXT,
+    cost DECIMAL(10,2),
+    segments INT,
+    ultravox_cost DECIMAL(10,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clients (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255),
+    phone_number VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS service_credentials (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    service_name VARCHAR(255),
+    credentials TEXT,
+    is_connected BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT IGNORE INTO users (username, password_hash) 
+VALUES ('hamza', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewFX5rtJ.ETlF/Ye');
+EOF
+
+# -----------------------------------------------------------
+# III. APPLICATION SETUP
+# -----------------------------------------------------------
+log "Setting up the application environment in ${APP_DIR}..."
+
+# Clean previous deployment folders
+rm -rf "${APP_DIR}/venv"
+sudo rm -rf "${WEB_ROOT}"
+
+# Create and activate Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip setuptools wheel cython
+
+
+
+
+# -----------------------------------------------------------
+# IV. BACKEND SETUP
+# -----------------------------------------------------------
+log "Installing backend dependencies..."
+cd "${BACKEND_DIR}"
+
+# Install backend requirements
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt
+else
+    log "Warning: requirements.txt not found in ${BACKEND_DIR}."
+fi
+
+# Install additional required packages
+pip install gunicorn uvicorn mysqlclient python-jose[cryptography] passlib[bcrypt] python-multipart
+
+# Create backend .env file
+cat > "${BACKEND_DIR}/.env" << EOF
+# Database Configuration
+DB_HOST=localhost
+DB_USER=${MYSQL_USER}
+DB_PASSWORD=${MYSQL_PASSWORD}
+DB_DATABASE=${MYSQL_DATABASE}
+
+# JWT Settings
+JWT_SECRET=your_jwt_secret_key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Twilio Credentials
+TWILIO_ACCOUNT_SID=your_account_sid
+TWILIO_AUTH_TOKEN=your_auth_token
+
+# Ultravox API
+ULTRAVOX_API_KEY=your_ultravox_api_key
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# Server Settings
+DEBUG=False
+CORS_ORIGINS=https://${DOMAIN}
+SERVER_DOMAIN=${DOMAIN}
+EOF
+
+# Initialize database tables
+python3 -m app.database || log "Database initialization failed; check logs."
+
+# -----------------------------------------------------------
+# V. FRONTEND SETUP
+# -----------------------------------------------------------
+log "Building frontend..."
+cd "${FRONTEND_DIR}"
+
+# Create frontend .env file
+cat > "${FRONTEND_DIR}/.env" << EOF
+VITE_API_URL=https://${DOMAIN}/api
+VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
+VITE_GOOGLE_CLIENT_ID=your_google_client_id
+EOF
+
+# Install frontend dependencies and build
+npm install
+npm run build
+
+log "Deploying frontend files to ${WEB_ROOT}..."
+sudo mkdir -p "${WEB_ROOT}"
+sudo rm -rf "${WEB_ROOT:?}"/*
+sudo cp -r dist/* "${WEB_ROOT}/"
+
+# -----------------------------------------------------------
+# VI. SYSTEMD SERVICE SETUP
+# -----------------------------------------------------------
+log "Creating systemd service for backend..."
+sudo tee ${SERVICE_FILE} > /dev/null <<EOF
+[Unit]
+Description=Tfrtita333 App Backend
+After=network.target mysql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=${BACKEND_DIR}
+Environment="PATH=${APP_DIR}/venv/bin"
+ExecStart=${APP_DIR}/venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 3 --bind 127.0.0.1:8080 app.main:app
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable tfrtita333.service
+sudo systemctl restart tfrtita333.service
+
+# -----------------------------------------------------------
+# VII. NGINX CONFIGURATION
+# -----------------------------------------------------------
+log "Configuring Nginx for ${DOMAIN}..."
+NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
+sudo tee ${NGINX_CONF} > /dev/null <<EOF
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root ${WEB_ROOT};
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 100M;
+    
+    # Frontend static files
+    location / {
+        root ${WEB_ROOT};
+        try_files \$uri \$uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # WebSocket support
+    location /ws {
+        proxy_pass http://127.0.0.1:8080/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+
+log "Enabling Nginx configuration..."
+sudo ln -sf ${NGINX_CONF} /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# -----------------------------------------------------------
+# VIII. SSL CERTIFICATE SETUP
+# -----------------------------------------------------------
+log "Obtaining SSL certificate..."
+sudo certbot --nginx -d ${DOMAIN} -d www.${DOMAIN} --non-interactive --agree-tos --email ${EMAIL} --redirect
+
+# -----------------------------------------------------------
+# IX. FINAL SETUP AND VERIFICATION
+# -----------------------------------------------------------
+log "Restarting all services..."
+sudo systemctl restart mysql
+sudo systemctl restart tfrtita333
+sudo systemctl restart nginx
+
+# Verify services are running
+log "Verifying services..."
+services=("mysql" "nginx" "tfrtita333")
+for service in "${services[@]}"; do
+    if ! sudo systemctl is-active --quiet $service; then
+        log "WARNING: $service is not running!"
+    else
+        log "$service is running correctly."
+    fi
+done
+
+# Final status check
+log "Deployment complete!"
+log "Your site is available at: https://${DOMAIN}"
+log "Please check the following:"
+log "1. MySQL status: $(sudo systemctl is-active mysql)"
+log "2. Nginx status: $(sudo systemctl is-active nginx)"
+log "3. Backend status: $(sudo systemctl is-active tfrtita333)"
+log "4. SSL certificate status: $(sudo certbot certificates | grep 'Expiry Date')"
+
+# Print connection info
+log "You can now access:"
+log "- Frontend: https://${DOMAIN}"
+log "- Backend API: https://${DOMAIN}/api"
+log "- WebSocket: wss://${DOMAIN}/ws"
+
+# Print default credentials
+log "Default admin credentials:"
+log "Username: hamza"
+log "Password: AFINasahbi@-11"
+log "IMPORTANT: Please change these credentials after first login!"
+
+# Check logs if needed
+log "To check logs, use:"
+log "Backend logs: sudo journalctl -u tfrtita333 -f"
+log "Nginx logs: sudo tail -f /var/log/nginx/error.log"
+log "MySQL logs: sudo tail -f /var/log/mysql/error.log"
+
+
+
+
+
+
+
+
+
+
+
+
+------------------
+
+
+
+ssh -i C:\Users\hamza\Downloads\outgoingcall-ssh-key-2025-02-06.key ubuntu@79.72.51.70
+
+
+
+
+rm -rf tfrtita333
+
+
+
+
+
+git clone https://github.com/last-million/tfrtita333.git
+
+
+
+cd tfrtita333
+
+
+
+sudo apt install -y dos2unix
+dos2unix deploy.sh
+
+
+
+chmod +x deploy.sh
+
+
+
+./deploy.sh
+
+
+
+
+
+
+------------
+
+
+
+You can check the status of your backend service with:
+
+sudo systemctl status tfrtita333.service
+
+
+
+
+
+
+
+And review Nginx’s error log if needed:
+
+sudo tail -f /var/log/nginx/error.log
