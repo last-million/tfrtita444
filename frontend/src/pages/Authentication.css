@@ -1,0 +1,309 @@
+/* Add these styles to your existing CSS */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field-actions {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 8px; /* Increased gap between icons */
+  align-items: center;
+}
+
+.toggle-visibility-btn,
+.clear-field-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+  color: var(--text-color, #fff);
+  font-size: 16px; /* Set consistent font size */
+  width: 24px;    /* Fixed width */
+  height: 24px;   /* Fixed height */
+}
+
+.toggle-visibility-btn:hover,
+.clear-field-btn:hover {
+  opacity: 1;
+}
+
+.credential-input input {
+  padding-right: 70px; /* Increased padding to accommodate two buttons */
+}
+
+/* Add these styles to your existing CSS */
+.authentication-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.config-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.config-header h1 {
+  font-size: 2rem;
+  margin-bottom: 10px;
+  color: #0077ff; /* Primary color */
+}
+
+.config-section {
+  background-color: var(--card-bg, #121229); /* Use variable with fallback */
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.service-card {
+  background-color: var(--card-bg-dark, #1e1e30); /* Use variable with fallback */
+  border-radius: 12px;
+  padding: 15px;
+  text-align: center;
+  word-break: break-word; /* Add word-break to prevent overflow */
+}
+
+.service-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.service-icon {
+  font-size: 1.5rem;
+  margin-bottom: 5px;
+  color: var(--primary-color, #0077ff); /* Use variable with fallback */
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #444; /* Dark gray */
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #00ffaa; /* Secondary color */
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+.edit-credentials-btn {
+  background-color: #0077ff; /* Primary color */
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.edit-credentials-btn:hover {
+  background-color: #0066dd; /* Darker primary color */
+}
+
+/* Credentials Modal Styles */
+.credentials-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.credentials-modal-content {
+  background-color: var(--card-bg-dark, #1e1e30); /* Use variable with fallback */
+  border-radius: 16px;
+  padding: 30px;
+  width: 90%;
+  max-width: 500px;
+  color: var(--text-color-dark, #e0e0ff); /* Use variable with fallback */
+  box-shadow: var(--box-shadow, 0 5px 15px rgba(0,0,0,0.3));
+}
+
+.credentials-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  color: var(--text-color-dark, #e0e0ff); /* Use variable with fallback */
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.credentials-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.credential-input {
+  display: flex;
+  flex-direction: column;
+}
+
+.credential-input label {
+  margin-bottom: 5px;
+  color: #e0e0ff; /* Light text */
+}
+
+.input-wrapper {
+  position: relative;
+}
+
+.credential-input input {
+  width: 100%;
+  padding: 10px;
+  padding-right: 40px;
+  background-color: var(--input-bg-dark, #333); /* Use variable with fallback */
+  border: 1px solid var(--border-color-dark, #555); /* Use variable with fallback */
+  border-radius: 6px;
+  color: var(--text-color-dark, #e0e0ff); /* Use variable with fallback */
+}
+
+/* Position each button individually to prevent overlap */
+.toggle-visibility-btn {
+  position: absolute;
+  right: 35px; /* Position farther right to create space */
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-color-dark, #e0e0ff); /* Use variable with fallback */
+  cursor: pointer;
+  z-index: 2; /* Make sure it's above other elements */
+}
+
+.clear-field-btn {
+  position: absolute;
+  right: 8px; /* Position closer to the edge */
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-color-dark, #e0e0ff); /* Use variable with fallback */
+  cursor: pointer;
+  z-index: 2; /* Make sure it's above other elements */
+}
+
+.save-credentials-btn {
+  margin-top: 20px;
+  background-color: var(--primary-color, #0077ff); /* Use variable with fallback */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.save-credentials-btn:hover {
+  background-color: var(--primary-dark, #0066dd); /* Use variable with fallback */
+  transform: translateY(-2px);
+}
+
+.redirect-uri {
+  word-break: break-all;
+  margin-top: 10px;
+}
+
+/* Support for light mode */
+body:not(.dark-mode) .credentials-modal-content {
+  background-color: var(--card-bg-light, #fff);
+  color: var(--text-color-light, #333);
+}
+
+body:not(.dark-mode) .toggle-visibility-btn,
+body:not(.dark-mode) .clear-field-btn,
+body:not(.dark-mode) .close-modal-btn {
+  color: var(--text-color-light, #333);
+}
+
+body:not(.dark-mode) .credential-input label {
+  color: var(--text-color-light, #333);
+}
+
+body:not(.dark-mode) .credential-input input {
+  background-color: var(--input-bg-light, #f5f5f5);
+  border: 1px solid var(--border-color-light, #ddd);
+  color: var(--text-color-light, #333);
+}
+
+/* Make sure icons are visible */
+.toggle-visibility-btn:focus,
+.clear-field-btn:focus {
+  outline: none;
+  opacity: 1;
+}
+
+/* Media queries for responsiveness */
+@media (max-width: 768px) {
+  .services-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .credentials-modal-content {
+    width: 95%;
+  }
+}

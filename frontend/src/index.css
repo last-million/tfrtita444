@@ -1,0 +1,228 @@
+:root {
+  /* Dark Mode Colors */
+  --bg-dark: #0a0a1a;
+  --bg-dark-secondary: #1e1e30;
+  --text-dark: #e0e0ff;
+  --primary-dark: #0077ff;
+  --secondary-dark: #00ffaa;
+  --card-bg-dark: #1e1e30;
+  --input-bg-dark: #333;
+  --input-border-dark: #555;
+  --modal-bg-dark: rgba(25, 25, 35, 0.95);
+  --switch-bg-dark: rgba(255, 255, 255, 0.1);
+  --switch-thumb-dark: white;
+  --page-bg-dark: #0a0a1a;
+  --page-text-dark: #e0e0ff;
+  --section-bg-dark: #1e1e30;
+  --dashboard-card-bg-dark: #1e1e30;
+  --dashboard-card-text-dark: #e0e0ff;
+  --service-item-bg-dark: #333;
+  --stat-item-bg-dark: #333;
+  --stat-item-text-dark: #e0e0ff; /* Light text for stat items */
+  --stat-value-text-dark: #3498db; /* Blue for stat values */
+  --quick-link-bg-dark: #333;
+  --quick-link-text-dark: #e0e0ff;
+  --activity-item-bg-dark: #333;
+  --activity-text-dark: #e0e0ff;
+  --activity-timestamp-dark: #3498db;
+
+  /* Light Mode Colors */
+  --bg-light: #ffffff;
+  --bg-light-secondary: #ffffff;
+  --text-light: #000000;
+  --primary-light: #3498db;
+  --secondary-light: #2ecc71;
+  --card-bg-light: #f0f0f0;
+  --input-bg-light: #f9f9f9;
+  --input-border-light: #ddd;
+  --modal-bg-light: #ffffff;
+  --switch-bg-light: #ddd;
+  --switch-thumb-light: #000000;
+  --page-bg-light: #ffffff;
+  --page-text-light: #000000;
+  --section-bg-light: #f0f0f0;
+  --dashboard-card-bg-light: #ffffff;
+  --dashboard-card-text-light: #000000;
+  --service-item-bg-light: #f9f9f9;
+  --stat-item-bg-light: #f1f1f1;
+  --stat-item-text-light: #7f8c8d; /* Dark text for stat items */
+  --stat-value-text-light: #2c3e50; /* Dark blue for stat values */
+  --quick-link-bg-light: #f1f1f1;
+  --quick-link-text-light: #2c3e50;
+  --activity-item-bg-light: #f9f9f9;
+  --activity-text-light: #000000;
+  --activity-timestamp-light: #7f8c8d;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+  background-color: var(--bg-dark);
+  color: var(--text-dark);
+}
+
+body.dark-mode .config-header h1 {
+  color: var(--primary-dark);
+}
+
+body.dark-mode .service-card {
+  background-color: var(--card-bg-dark);
+  color: var(--text-dark);
+}
+
+body.dark-mode .credential-input input {
+  background-color: var(--input-bg-dark);
+  border-color: var(--input-border-dark);
+  color: var(--text-dark);
+}
+
+body.dark-mode .credentials-modal-content {
+  background-color: var(--modal-bg-dark);
+  color: var(--text-dark);
+}
+
+body.dark-mode .switch .slider {
+  background-color: var(--switch-bg-dark);
+}
+
+body.dark-mode .switch .slider:before {
+  background-color: var(--switch-thumb-dark);
+}
+
+body.dark-mode .dashboard-page,
+body.dark-mode .call-manager-page {
+  background-color: var(--page-bg-dark);
+  color: var(--page-text-dark);
+}
+
+body.dark-mode .dashboard-page .dashboard-card {
+  background-color: var(--dashboard-card-bg-dark);
+  color: var(--dashboard-card-text-dark);
+}
+
+body.dark-mode .dashboard-page .services-overview .service-item {
+  background-color: var(--service-item-bg-dark);
+}
+
+body.dark-mode .dashboard-page .system-stats .stat-item {
+  background-color: var(--stat-item-bg-dark);
+  color: var(--stat-item-text-dark); /* Light text for stat items */
+}
+
+body.dark-mode .dashboard-page .system-stats .stat-item .stat-value {
+  color: var(--stat-value-text-dark); /* Blue for stat values */
+}
+
+body.dark-mode .dashboard-page .quick-links .quick-link {
+  background-color: var(--quick-link-bg-dark);
+  color: var(--quick-link-text-dark);
+}
+
+body.dark-mode .dashboard-page .recent-activities .activity-item {
+  background-color: var(--activity-item-bg-dark);
+  color: var(--activity-text-dark);
+}
+
+body.dark-mode .dashboard-page .recent-activities .activity-item .activity-timestamp {
+  color: var(--activity-timestamp-dark);
+}
+
+body.call-manager-page .call-section {
+  background-color: var(--card-bg-dark);
+  color: var(--text-dark);
+}
+
+/* Light Mode Styles */
+body.light-mode {
+  background-color: var(--bg-light);
+  color: var(--text-light);
+}
+
+body.light-mode .config-header h1 {
+  color: var(--primary-light);
+}
+
+body.light-mode .service-card {
+  background-color: var(--card-bg-light);
+  color: var(--text-light);
+}
+
+body.light-mode .credential-input input {
+  background-color: var(--input-bg-light);
+  border-color: var(--input-border-light);
+  color: var(--text-light);
+}
+
+body.light-mode .credentials-modal-content {
+  background-color: var(--modal-bg-light);
+  color: var(--text-light);
+}
+
+body.light-mode .switch .slider {
+  background-color: var(--switch-bg-light);
+}
+
+body.light-mode .switch .slider:before {
+  background-color: var(--switch-thumb-light);
+}
+
+body.light-mode .dashboard-page,
+body.light-mode .call-manager-page {
+  background-color: var(--page-bg-light);
+  color: var(--page-text-light);
+}
+
+body.light-mode .dashboard-page .dashboard-card {
+  background-color: var(--dashboard-card-bg-light);
+  color: var(--dashboard-card-text-light);
+}
+
+body.light-mode .dashboard-page .services-overview .service-item {
+  background-color: var(--service-item-bg-light);
+}
+
+body.light-mode .dashboard-page .system-stats .stat-item {
+  background-color: var(--stat-item-bg-light);
+  color: var(--stat-item-text-light);
+}
+
+body.light-mode .dashboard-page .system-stats .stat-item .stat-value {
+  color: var(--stat-value-text-light); /* Dark blue for stat values */
+}
+
+body.light-mode .dashboard-page .quick-links .quick-link {
+  background-color: var(--quick-link-bg-light);
+  color: var(--quick-link-text-light);
+}
+
+body.light-mode .call-manager-page .call-section {
+  background-color: var(--card-bg-light);
+  color: var(--text-light);
+}
+
+/* Force text color for specific elements */
+.dashboard,
+.call-manager {
+  color: inherit; /* Inherit text color from body */
+}
+
+/* Arabic layout */
+body.rtl {
+  direction: rtl;
+  font-family: 'Arial', sans-serif; /* Or any suitable Arabic font */
+}
+
+body.rtl .call-detail-label {
+  margin-left: 10px;
+  margin-right: 0;
+}
+
+body.rtl .field-actions {
+  left: 10px;
+  right: auto;
+}

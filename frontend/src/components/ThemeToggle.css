@@ -1,0 +1,60 @@
+.theme-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #2196F3;
+  transition: .4s;
+  border-radius: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px;
+}
+
+.theme-icon {
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-icon {
+  color: #f1c40f;
+}
+
+.light-icon {
+  color: #f39c12;
+}
+
+.switch input:checked + .slider {
+  background-color: #34495e;
+}
+
+.switch input:checked + .slider .dark-icon {
+  transform: translateX(26px);
+}
+
+.switch input:checked + .slider .light-icon {
+  transform: translateX(-26px);
+}
