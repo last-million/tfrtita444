@@ -32,42 +32,27 @@ const CallHistory = () => {
         params.search = query;
       }
       
-      const response = await api.get('/api/calls/history', { params });
+      // Use the correct endpoint from our api service
+      const response = await api.calls.getHistory(params);
       
-      setCallLogs(response.data || []);
-      setTotalPages(Math.ceil((response.data?.total || 0) / 10));
+      if (response && response.data) {
+        setCallLogs(response.data);
+        setTotalPages(Math.ceil((response.data.length || 0) / 10));
+      } else {
+        setCallLogs([]);
+        setTotalPages(1);
+      }
     } catch (error) {
       console.error("Error fetching call history:", error);
-      // Show mock data for demonstration
-      const mockData = generateMockCallData();
-      setCallLogs(mockData);
-      setTotalPages(Math.ceil(mockData.length / 10));
+      // Don't show mock data in production, show an empty state instead
+      setCallLogs([]);
+      setTotalPages(1);
+      
+      // In production, you might want to show a more user-friendly error
+      // toast.error("Unable to load call history. Please try again later.");
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const generateMockCallData = () => {
-    const statuses = ['completed', 'failed', 'missed', 'in-progress'];
-    const numbers = ['+1234567890', '+1987654321', '+1555123456', '+1555789012'];
-    const directions = ['inbound', 'outbound'];
-    
-    return Array.from({ length: 30 }, (_, i) => ({
-      id: i + 1,
-      call_sid: `call_${Math.random().toString(36).substring(2, 10)}`,
-      from_number: numbers[Math.floor(Math.random() * numbers.length)],
-      to_number: numbers[Math.floor(Math.random() * numbers.length)],
-      direction: directions[Math.floor(Math.random() * directions.length)],
-      status: statuses[Math.floor(Math.random() * statuses.length)],
-      start_time: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
-      duration: Math.floor(Math.random() * 600),
-      recording_url: Math.random() > 0.7 ? `https://example.com/recording_${i}.mp3` : null,
-      transcription: Math.random() > 0.5 ? 'Sample transcription for this call. Customer inquired about product details and pricing options.' : null,
-      cost: parseFloat((Math.random() * 2.5).toFixed(2)),
-      ultravox_cost: parseFloat((Math.random() * 1.5).toFixed(2)),
-      hang_up_by: Math.random() > 0.5 ? 'user' : 'agent',
-      created_at: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString()
-    }));
   };
 
   const handleViewDetails = (callSid) => {
