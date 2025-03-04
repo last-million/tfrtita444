@@ -55,6 +55,7 @@ class CredentialValidator:
         validation_methods = {
             'Supabase': self._validate_supabase,
             'Twilio': self._validate_twilio,
+            'Ultravox': self._validate_ultravox,
             'SERP API': self._validate_serp_api,
             'Airtable': self._validate_airtable,
             'Google Calendar': self._validate_google_calendar,
@@ -143,6 +144,26 @@ class CredentialValidator:
         except Exception as e:
             return {'valid': False, 'error': f'Gmail validation error: {str(e)}'}
 
+    def _validate_ultravox(self, credentials):
+        try:
+            if not credentials.get('apiKey'):
+                return {'valid': False, 'error': 'Missing Ultravox API Key'}
+            
+            # Verify the API key format (adjust pattern as needed for actual Ultravox keys)
+            if not re.match(r'^[A-Za-z0-9._-]{20,}$', credentials['apiKey']):
+                return {'valid': False, 'error': 'Invalid Ultravox API Key format'}
+            
+            # Verify the endpoint URL if provided
+            if credentials.get('endpoint'):
+                if not re.match(r'^https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', credentials['endpoint']):
+                    return {'valid': False, 'error': 'Invalid Ultravox endpoint URL format'}
+            
+            # In production, you would actually test the API key with a lightweight API call
+            # For now, we'll accept keys matching the pattern
+            return {'valid': True, 'error': None}
+        except Exception as e:
+            return {'valid': False, 'error': f'Ultravox validation error: {str(e)}'}
+    
     def _validate_google_drive(self, credentials):
         try:
             if not credentials.get('apiKey') or not credentials.get('clientId'):
