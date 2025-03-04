@@ -97,18 +97,35 @@ check_error "Failed to install required packages"
 # III. FIREWALL SETUP
 # -----------------------------------------------------------
 log "Configuring UFW firewall..."
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow OpenSSH
-ufw allow "Nginx Full"
-ufw allow 8000
-ufw allow 8080
-ufw allow 3306/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-ufw status
+export DEBIAN_FRONTEND=noninteractive
+
+# Ensure UFW is not running before configuration
+systemctl stop ufw || true
+
+# Configure UFW with echo "y" to automatically answer any prompts
+echo "y" | ufw --force reset
+echo "y" | ufw default deny incoming
+echo "y" | ufw default allow outgoing
+echo "y" | ufw allow OpenSSH
+echo "y" | ufw allow "Nginx Full"
+echo "y" | ufw allow 8000
+echo "y" | ufw allow 8080
+echo "y" | ufw allow 3306/tcp
+echo "y" | ufw allow 80/tcp
+echo "y" | ufw allow 443/tcp
+
+# Enable UFW with --force and "yes" pipe to prevent hanging
+yes | ufw --force enable || {
+  log "UFW enable command timed out or failed. Trying alternative method..."
+  # Alternative method to enable UFW if the first method failed
+  ufw --force enable < /dev/null > /dev/null 2>&1 || true
+}
+
+# Display UFW status but don't wait for it
+ufw status || true
+
+# Continue regardless of UFW enabling success
+log "Firewall configuration attempted, continuing with deployment..."
 
 # -----------------------------------------------------------
 # IV. IPTABLES RULES
