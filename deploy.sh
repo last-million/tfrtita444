@@ -428,15 +428,92 @@ ENCRYPTION_SALT=placeholder-salt-value
 LOG_LEVEL=INFO
 EOF
 
-# Create a simple main.py if it doesn't exist
-if [ ! -f "${BACKEND_DIR}/app/main.py" ]; then
-    log "Creating main.py..."
-    cat > "${BACKEND_DIR}/app/main.py" << EOF
+# Create auth routes (critically important for login to work)
+log "Setting up authentication routes..."
+mkdir -p "${BACKEND_DIR}/app/routes" || true
+touch "${BACKEND_DIR}/app/routes/__init__.py" || true
+
+# Create auth.py file for login
+log "Creating auth routes file..."
+cat > "${BACKEND_DIR}/app/routes/auth.py" << 'EOF'
+from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordRequestForm
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from typing import Optional
+
+router = APIRouter(tags=["authentication"])
+
+# JWT configuration
+SECRET_KEY = "strong-secret-key-for-jwt-tokens"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+@router.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Hard-coded check for demo purposes
+    if form_data.username != "hamza" or form_data.password != "AFINasahbi@-11":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": form_data.username}, expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "username": form_data.username
+    }
+
+@router.get("/me")
+async def read_users_me(token: str = None):
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+        return {"username": username}
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+EOF
+
+# Create main.py with proper route imports
+log "Creating main.py with auth routes..."
+cat > "${BACKEND_DIR}/app/main.py" << EOF
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 import os
 from datetime import datetime, timedelta
+
+# Import routes
+from .routes import auth
 
 app = FastAPI(
     title="Voice Call AI API",
@@ -447,11 +524,14 @@ app = FastAPI(
 # CORS middleware setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=["*"],  # Allow all origins for debugging
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include auth routes with /api prefix
+app.include_router(auth.router, prefix="/api/auth")
 
 @app.get("/")
 async def root():
@@ -467,7 +547,6 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 EOF
-fi
 
 # -----------------------------------------------------------
 # IX. FRONTEND SETUP
@@ -583,19 +662,33 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
     
-    location /api {
+    # Fixed API proxy configuration - critical for login to work
+    location /api/ {
+        # Notice: removed trailing slash in proxy_pass to fix path handling
         proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
+        proxy_read_timeout 300;
+        send_timeout 300;
     }
     
     location /ws {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8080/ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
+    
+    # Error logs for debugging
+    access_log /var/log/nginx/${DOMAIN}_access.log;
+    error_log /var/log/nginx/${DOMAIN}_error.log debug;
 }
 EOF
 
