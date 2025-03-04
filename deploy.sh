@@ -581,46 +581,144 @@ async def auth_health_check():
     return {"status": "auth_service_healthy", "timestamp": datetime.utcnow().isoformat()}
 EOF
 
-# Create main.py with proper route imports
-log "Creating main.py with auth routes..."
-cat > "${BACKEND_DIR}/app/main.py" << EOF
-from fastapi import FastAPI, Depends, HTTPException, status
+# Create main.py with proper route imports and direct auth handler
+log "Creating main.py with simplified direct auth handler..."
+cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
+from fastapi import FastAPI, Request, HTTPException, status, Form
 from fastapi.middleware.cors import CORSMiddleware
-from .config import settings
 import os
+import logging
 from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from typing import Optional
 
-# Import routes
-from .routes import auth
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("main")
 
+# Create FastAPI app
 app = FastAPI(
     title="Voice Call AI API",
     description="API for Voice Call AI application",
     version="1.0.0"
 )
 
-# CORS middleware setup
+# CORS middleware setup - allow all origins and methods
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for debugging
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include auth routes with /api prefix
-app.include_router(auth.router, prefix="/api/auth")
+# JWT configuration
+SECRET_KEY = "strong-secret-key-for-jwt-tokens"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# CRITICAL: Handle auth directly in main.py to avoid any import issues
+@app.post("/api/auth/token")
+async def login_for_access_token(request: Request):
+    try:
+        logger.info(f"Auth token request received with content type: {request.headers.get('content-type')}")
+        
+        # Parse the request based on content type
+        form_data = None
+        username = None
+        password = None
+        
+        content_type = request.headers.get('content-type', '')
+        
+        if 'application/json' in content_type:
+            # Handle JSON data
+            json_data = await request.json()
+            username = json_data.get('username')
+            password = json_data.get('password')
+            logger.info(f"Received JSON login request for user: {username}")
+            
+        elif 'application/x-www-form-urlencoded' in content_type or 'multipart/form-data' in content_type:
+            # Handle form data
+            form_data = await request.form()
+            username = form_data.get('username')
+            password = form_data.get('password')
+            logger.info(f"Received form login request for user: {username}")
+            
+        else:
+            # Try to handle raw body
+            body = await request.body()
+            try:
+                body_text = body.decode('utf-8')
+                logger.info(f"Raw request body: {body_text[:100]}")
+                
+                # Try to extract username and password
+                if '&' in body_text:
+                    params = {}
+                    for param in body_text.split('&'):
+                        if '=' in param:
+                            key, value = param.split('=', 1)
+                            params[key] = value
+                    
+                    username = params.get('username')
+                    password = params.get('password')
+                    logger.info(f"Extracted from raw body: username={username}")
+            except Exception as e:
+                logger.error(f"Failed to parse request body: {str(e)}")
+        
+        # Basic auth check - hardcoded credentials
+        if not username or not password:
+            logger.error("Username or password missing")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username and password required"
+            )
+            
+        if username != "hamza" or password != "AFINasahbi@-11":
+            logger.error(f"Invalid credentials for user: {username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password"
+            )
+        
+        # Generate token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": username}, expires_delta=access_token_expires
+        )
+        
+        # Return success response
+        logger.info(f"Login successful for user: {username}")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "username": username
+        }
+        
+    except Exception as e:
+        logger.exception(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
+
+# Root endpoint
 @app.get("/")
 async def root():
     return {
         "status": "ok",
         "message": "Voice Call AI API is running",
         "version": "1.0.0",
-        "environment": os.getenv("ENV", "production"),
         "timestamp": datetime.utcnow().isoformat()
     }
 
+# Health check endpoint
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
@@ -762,122 +860,249 @@ mkdir -p /etc/nginx/sites-enabled || true
 # Create Nginx configuration
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 
-# Create a direct API test file to verify auth is working
-log "Creating direct API test file..."
-cat > "/tmp/test-auth.html" << 'EOF'
+# Create simple static auth test HTML file with direct Fetch API call
+log "Creating static auth test file..."
+cat > "${WEB_ROOT}/test-auth.html" << 'EOF'
 <!DOCTYPE html>
 <html>
 <head>
     <title>Auth Test</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+        button { padding: 8px 15px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        input { padding: 8px; margin-bottom: 10px; width: 250px; }
+    </style>
     <script>
+        // Test direct login with no framework
         async function testLogin() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('result');
             
-            // Create form data
-            const formData = new FormData();
-            formData.append('username', username);
-            formData.append('password', password);
+            resultDiv.innerHTML = "Sending request...";
             
             try {
-                const response = await fetch('/api/auth/token', {
-                    method: 'POST',
+                // Simple form data approach
+                const formData = new FormData();
+                formData.append("username", username);
+                formData.append("password", password);
+                
+                console.log("Sending auth request with FormData");
+                
+                // Add timestamp to prevent caching
+                const url = `/api/auth/token?t=${new Date().getTime()}`;
+                
+                // Show the URL we're posting to
+                resultDiv.innerHTML += `<br>Posting to: ${url}`;
+                
+                const response = await fetch(url, {
+                    method: "POST",
                     body: formData
                 });
                 
-                const result = await response.text();
-                document.getElementById('result').innerText = 
-                    `Status: ${response.status}\nResponse: ${result}`;
+                // Show the response status
+                resultDiv.innerHTML += `<br>Status: ${response.status}`;
+                
+                // Try to get response as text
+                const text = await response.text();
+                resultDiv.innerHTML += `<br>Raw response: ${text}`;
+                
+                // Try to parse as JSON (may fail)
+                try {
+                    const json = JSON.parse(text);
+                    resultDiv.innerHTML += `<br><br>JSON response:<br>${JSON.stringify(json, null, 2)}`;
+                } catch (e) {
+                    resultDiv.innerHTML += `<br><br>Not valid JSON: ${e.message}`;
+                }
             } catch (error) {
-                document.getElementById('result').innerText = 
-                    `Error: ${error.message}`;
+                resultDiv.innerHTML = `Error: ${error.message}`;
+                console.error("Login test error:", error);
+            }
+        }
+        
+        // Alternative test with URL-encoded form
+        async function testUrlEncoded() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('urlResult');
+            
+            resultDiv.innerHTML = "Sending URL-encoded request...";
+            
+            try {
+                const params = new URLSearchParams();
+                params.append("username", username);
+                params.append("password", password);
+                
+                console.log("Sending auth request with URLSearchParams");
+                
+                const response = await fetch("/api/auth/token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    body: params
+                });
+                
+                // Show the response status
+                resultDiv.innerHTML += `<br>Status: ${response.status}`;
+                
+                // Get response as text
+                const text = await response.text();
+                resultDiv.innerHTML += `<br>Raw response: ${text}`;
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+                console.error("URL-encoded test error:", error);
+            }
+        }
+        
+        // Test with direct JSON
+        async function testJsonLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('jsonResult');
+            
+            resultDiv.innerHTML = "Sending JSON request...";
+            
+            try {
+                const data = {
+                    username: username,
+                    password: password
+                };
+                
+                console.log("Sending auth request with JSON payload");
+                
+                const response = await fetch("/api/auth/token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                // Show the response status
+                resultDiv.innerHTML += `<br>Status: ${response.status}`;
+                
+                // Get response as text
+                const text = await response.text();
+                resultDiv.innerHTML += `<br>Raw response: ${text}`;
+            } catch (error) {
+                resultDiv.innerHTML = `Error: ${error.message}`;
+                console.error("JSON test error:", error);
             }
         }
     </script>
 </head>
 <body>
-    <h1>Auth Test</h1>
+    <h1>Auth API Test</h1>
     <div>
-        <label for="username">Username:</label>
-        <input type="text" id="username" value="hamza" /><br>
-        <label for="password">Password:</label>
-        <input type="password" id="password" value="AFINasahbi@-11" /><br>
-        <button onclick="testLogin()">Test Login</button>
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" value="hamza"><br>
+        
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" value="AFINasahbi@-11"><br>
     </div>
-    <pre id="result"></pre>
+    
+    <h2>Test 1: FormData</h2>
+    <button onclick="testLogin()">Test Login with FormData</button>
+    <pre id="result">Results will appear here...</pre>
+    
+    <h2>Test 2: URL-encoded</h2>
+    <button onclick="testUrlEncoded()">Test Login with URL-encoded</button>
+    <pre id="urlResult">Results will appear here...</pre>
+    
+    <h2>Test 3: JSON</h2>
+    <button onclick="testJsonLogin()">Test Login with JSON</button>
+    <pre id="jsonResult">Results will appear here...</pre>
 </body>
 </html>
 EOF
 
-# Copy test file to web directory
-cp "/tmp/test-auth.html" "${WEB_ROOT}/test-auth.html"
-chown www-data:www-data "${WEB_ROOT}/test-auth.html"
+# Ensure auth test file has correct permissions
 chmod 644 "${WEB_ROOT}/test-auth.html"
+chown www-data:www-data "${WEB_ROOT}/test-auth.html"
 
-# Create ultra-simple Nginx configuration first to verify backend works
-log "Creating simplified Nginx configuration for testing..."
+# Create super simplified Nginx configuration optimized for login endpoint
+log "Creating simplified Nginx configuration focused on auth endpoint..."
 cat > ${NGINX_CONF} << EOF
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name ${DOMAIN} www.${DOMAIN};
     
-    # Extremely detailed logging
+    # Excessively detailed logging for debugging
     error_log /var/log/nginx/error.log debug;
     access_log /var/log/nginx/access.log;
     
-    # Frontend files
+    # Root directory for frontend files
+    root ${WEB_ROOT};
+    index index.html;
+    
+    # Try HTML files directly
     location / {
-        root ${WEB_ROOT};
         try_files \$uri \$uri/ /index.html;
     }
     
-    # Critical API proxy fix - using exact location and no trailing slash
-    location /api/auth/token {
-        # Direct pass to backend with debug headers
-        proxy_pass http://127.0.0.1:8080/api/auth/token;
+    # CRITICAL: Extremely simplified auth token endpoint
+    # This is the most direct configuration possible
+    location = /api/auth/token {
+        # Important: no trailing slash in proxy_pass for exact path matching
+        proxy_pass http://localhost:8080/api/auth/token;
         
-        # Full proxy headers
+        # Required headers
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
         
-        # Extended timeouts
-        proxy_connect_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-        send_timeout 300s;
+        # CORS headers needed for auth
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
         
-        # Debug headers
-        add_header X-Debug-Backend "http://127.0.0.1:8080/api/auth/token";
-        add_header X-Debug-Host \$host;
+        # Debug headers to verify request is hitting the right endpoint
+        add_header X-Debug-URL "/api/auth/token" always;
+        add_header X-Debug-Backend "http://localhost:8080/api/auth/token" always;
+        
+        # Excessive timeouts
+        proxy_connect_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+        send_timeout 600s;
+        
+        # Explicitly disable buffering
+        proxy_buffering off;
+        
+        # Don't close connections prematurely
+        proxy_http_version 1.1;
+        
+        # Accept larger request bodies for auth token
+        client_max_body_size 10M;
     }
     
-    # General API proxy for other endpoints
+    # General API endpoints
     location /api/ {
-        proxy_pass http://127.0.0.1:8080;
-        
-        # Full proxy headers
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         
+        # Disable buffering for streaming responses
+        proxy_buffering off;
+        
         # Extended timeouts
         proxy_connect_timeout 300s;
         proxy_send_timeout 300s;
         proxy_read_timeout 300s;
-        send_timeout 300s;
     }
     
-    # WebSocket configuration
+    # WebSocket support
     location /ws {
-        proxy_pass http://127.0.0.1:8080/ws;
+        proxy_pass http://localhost:8080/ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOF
