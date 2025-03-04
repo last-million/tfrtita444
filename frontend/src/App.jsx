@@ -17,6 +17,7 @@ import CallDetails from './pages/CallDetails';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Authentication from './pages/Authentication';
 import SystemConfig from './pages/SystemConfig';
+import LoginPage from './pages/LoginPage';
 
 // Styles
 import './App.css';
@@ -45,8 +46,8 @@ function App() {
           <KnowledgeBaseProvider>
             <Router>
               <Routes>
-                {/* Redirect login to dashboard */}
-                <Route path="/login" element={<Navigate to="/" replace />} />
+                {/* Login page */}
+                <Route path="/login" element={<LoginPage />} />
                 
                 {/* Protected routes */}
                 <Route path="/" element={
@@ -98,7 +99,7 @@ function App() {
                 } />
                 
                 <Route path="/system-config" element={
-                  <ProtectedRoute>
+                  <ProtectedRoute adminRequired={true}>
                     <Layout>
                       <SystemConfig />
                     </Layout>
