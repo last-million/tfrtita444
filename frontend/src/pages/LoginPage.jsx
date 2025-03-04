@@ -1,30 +1,34 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the path to redirect after login
+  const from = location.state?.from || '/';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    try {
-      const response = await axios.post('https://ajingolik.fun/api/auth/token', {
-        username,
-        password
-      });
-
-      if (response.data.access_token) {
-        localStorage.setItem('token', response.data.access_token);
-        navigate('/');
+    // Special case for hamza user with the specific password
+    if (username === 'hamza' && password === 'AFINasahbi@-11') {
+      const success = await login(username, password);
+      
+      if (success) {
+        // Redirect to previous page or dashboard
+        navigate(from, { replace: true });
+      } else {
+        setError('An error occurred during login');
       }
-    } catch (err) {
-      setError('Invalid credentials. Please try again.');
-      console.error('Login error:', err);
+    } else {
+      setError('Invalid username or password. Please try again with the correct credentials.');
     }
   };
 
