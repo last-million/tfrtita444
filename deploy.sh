@@ -48,6 +48,10 @@ check_error() {
 # -----------------------------------------------------------
 # I. SYSTEM PREPARATION
 # -----------------------------------------------------------
+log "Fixing any interrupted package installations..."
+dpkg --configure -a
+check_error "Failed to fix package installation state"
+
 log "Updating system packages..."
 apt update
 apt upgrade -y
