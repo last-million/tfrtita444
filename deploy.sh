@@ -93,39 +93,62 @@ apt install -y nginx certbot python3-certbot-nginx ufw git python3 python3-pip p
     libyaml-dev build-essential pkg-config python3-dev libssl-dev
 check_error "Failed to install required packages"
 
+# Set non-interactive mode globally for the entire script
+export DEBIAN_FRONTEND=noninteractive
+
 # -----------------------------------------------------------
 # III. FIREWALL SETUP
 # -----------------------------------------------------------
-log "Configuring UFW firewall..."
-export DEBIAN_FRONTEND=noninteractive
+log "Configuring UFW firewall rules (will be skipped if it hangs)..."
 
-# Ensure UFW is not running before configuration
-systemctl stop ufw || true
+# Setup watchdog to ensure script continues even if UFW hangs
+(
+  sleep 30
+  log "WATCHDOG: Checking if deployment script is still running at UFW stage..."
+  if grep -q "Configuring iptables rules..." /tmp/deploy_progress.txt; then
+    log "WATCHDOG: Script has continued past UFW. Good!"
+  else
+    log "WATCHDOG: Detected possible UFW hang. Killing UFW and continuing..."
+    # Kill any hung UFW processes
+    pkill -9 -f ufw || true
+    # Mark progress
+    echo "FORCED_CONTINUATION" >> /tmp/deploy_progress.txt
+  fi
+) &
+watchdog_pid=$!
 
-# Configure UFW with echo "y" to automatically answer any prompts
-echo "y" | ufw --force reset
-echo "y" | ufw default deny incoming
-echo "y" | ufw default allow outgoing
-echo "y" | ufw allow OpenSSH
-echo "y" | ufw allow "Nginx Full"
-echo "y" | ufw allow 8000
-echo "y" | ufw allow 8080
-echo "y" | ufw allow 3306/tcp
-echo "y" | ufw allow 80/tcp
-echo "y" | ufw allow 443/tcp
+# Mark our progress
+echo "Configuring UFW firewall..." > /tmp/deploy_progress.txt
 
-# Enable UFW with --force and "yes" pipe to prevent hanging
-yes | ufw --force enable || {
-  log "UFW enable command timed out or failed. Trying alternative method..."
-  # Alternative method to enable UFW if the first method failed
-  ufw --force enable < /dev/null > /dev/null 2>&1 || true
-}
+# Try to do basic firewall setup, but don't worry if it fails
+{
+  # Ensure UFW is not running before configuration
+  systemctl stop ufw || true
+  
+  # Configure UFW with echo "y" to automatically answer any prompts
+  ufw --force reset || true
+  echo "y" | ufw default deny incoming || true
+  echo "y" | ufw default allow outgoing || true
+  echo "y" | ufw allow OpenSSH || true
+  echo "y" | ufw allow "Nginx Full" || true
+  echo "y" | ufw allow 8000 || true
+  echo "y" | ufw allow 8080 || true
+  echo "y" | ufw allow 3306/tcp || true
+  echo "y" | ufw allow 80/tcp || true
+  echo "y" | ufw allow 443/tcp || true
+  
+  # Attempt to enable UFW with a 5-second timeout
+  timeout 5 bash -c "echo y | ufw --force enable" || true
+} > /dev/null 2>&1
 
-# Display UFW status but don't wait for it
-ufw status || true
+# Mark progress to indicate we've moved past UFW configuration
+echo "Configuring iptables rules..." >> /tmp/deploy_progress.txt
 
-# Continue regardless of UFW enabling success
-log "Firewall configuration attempted, continuing with deployment..."
+# Kill the watchdog we started since we've continued
+kill $watchdog_pid || true
+
+# Move on without waiting for UFW
+log "Moving on to iptables configuration..."
 
 # -----------------------------------------------------------
 # IV. IPTABLES RULES
