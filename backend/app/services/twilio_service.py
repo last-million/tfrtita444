@@ -47,61 +47,115 @@ class TwilioService:
             
         try:
             if ultravox_url:
-                # TwiML with <Connect><Stream> for Ultravox
+                # Log the Ultravox URL we're using
+                logger.info(f"Making call with Ultravox integration. URL: {ultravox_url}")
+                
+                # Create TwiML with <Connect><Stream> for Ultravox
                 twiml = VoiceResponse()
                 connect = Connect()
+                
+                # Format URL if needed
+                if ultravox_url.startswith('http'):
+                    # Convert to WebSocket if it's an HTTP URL
+                    ultravox_url = ultravox_url.replace('https://', 'wss://')
+                
                 stream = Stream(url=ultravox_url)
+                # Add parameters for better media streaming
+                stream.parameter(name="format", value="audio/x-raw")
+                stream.parameter(name="sampleRate", value="16000")
+                
                 connect.append(stream)
                 twiml.append(connect)
-
+                
+                # Log the TwiML we're sending
+                twiml_str = str(twiml)
+                logger.debug(f"Using TwiML: {twiml_str}")
+                
+                # Make the call with explicit content-type headers
+                extra_params = {
+                    'twiml': twiml_str,
+                    'status_callback': self.status_callback,
+                    'status_callback_event': ['initiated', 'ringing', 'answered', 'completed'],
+                    'status_callback_method': 'POST',
+                    'record': True
+                }
+                
+                # Create the call with proper headers
                 call = self.client.calls.create(
                     to=to_number,
                     from_=from_number,
-                    twiml=str(twiml),
-                    status_callback=self.status_callback,
-                    status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
-                    record=True
+                    **extra_params
                 )
-                logger.info(f"Twilio call with Ultravox. SID: {call.sid}")
+                logger.info(f"Twilio call with Ultravox created. SID: {call.sid}")
 
             else:
                 # Standard Twilio call (hits your incoming-call endpoint)
+                logger.info(f"Making standard Twilio call to webhook: {self.webhook_url}")
                 call = self.client.calls.create(
                     to=to_number,
                     from_=from_number,
                     url=self.webhook_url,
                     status_callback=self.status_callback,
                     status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
+                    status_callback_method='POST',
                     record=True
                 )
-                logger.info(f"Twilio call (no Ultravox). SID: {call.sid}")
+                logger.info(f"Standard Twilio call created. SID: {call.sid}")
 
             # Insert call record into DB
-            query = """
-                INSERT INTO calls (
-                    call_sid, from_number, to_number, status,
-                    start_time, direction
+            try:
+                query = """
+                    INSERT INTO calls (
+                        call_sid, from_number, to_number, status,
+                        start_time, direction
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                values = (
+                    call.sid,
+                    from_number,
+                    to_number,
+                    call.status,
+                    datetime.utcnow(),
+                    'outbound'
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            values = (
-                call.sid,
-                from_number,
-                to_number,
-                call.status,
-                datetime.utcnow(),
-                'outbound'
-            )
-            await db.execute(query, values)
+                await db.execute(query, values)
+                logger.info(f"Call record inserted into database. SID: {call.sid}")
+            except Exception as db_error:
+                # Don't fail the call if DB insert fails
+                logger.error(f"Failed to insert call record into database: {str(db_error)}")
+                # Continue with call creation anyway
 
             return {
                 "status": "success",
                 "call_sid": call.sid,
-                "call_status": call.status
+                "call_status": call.status,
+                "message": "Call initiated successfully"
             }
 
         except TwilioRestException as e:
+            # Handle Twilio-specific exceptions with detailed error info
+            error_code = getattr(e, 'code', 0)
+            status_code = getattr(e, 'status', 0)
+            
             logger.error(f"Twilio error: {str(e)}")
+            logger.error(f"Twilio error details - Code: {error_code}, Status: {status_code}")
+            
+            # Provide more specific error messages based on common Twilio errors
+            if error_code == 21211:
+                raise Exception(f"Invalid 'to' phone number format: {to_number}")
+            elif error_code == 21214:
+                raise Exception(f"'To' phone number cannot be reached: {to_number}")
+            elif error_code == 21606:
+                raise Exception("The 'from' number is not a valid, purchased Twilio number")
+            elif error_code == 20003:
+                raise Exception("Authentication error: Please check your Twilio credentials")
+            else:
+                raise Exception(f"Failed to initiate call: {str(e)}")
+                
+        except Exception as e:
+            # Handle other exceptions
+            logger.error(f"Unexpected error making call: {str(e)}", exc_info=True)
             raise Exception(f"Failed to initiate call: {str(e)}")
 
     async def bulk_calls(self, numbers: List[str], from_number: str) -> List[Dict]:
@@ -190,9 +244,19 @@ class TwilioService:
         response = VoiceResponse()
         connect = Connect()
         stream = Stream(url=ultravox_ws_url)
+        
+        # Add important parameters for Ultravox media streaming
+        stream.parameter(name="format", value="audio/x-raw")
+        stream.parameter(name="sampleRate", value="16000")
+        
         connect.append(stream)
         response.append(connect)
-        return str(response)
+        
+        # Log the generated TwiML for debugging
+        twiml_str = str(response)
+        logger.debug(f"Generated TwiML: {twiml_str}")
+        
+        return twiml_str
 
     async def handle_status_callback(self, data: Dict) -> None:
         """
