@@ -485,7 +485,11 @@ EOF
 
 # Install frontend dependencies and build
 log "Installing frontend dependencies and building..."
-npm ci || npm install || npm install --force || log "Warning: npm install failed, continuing anyway"
+# First update package-lock.json to match package.json
+log "Updating package-lock.json..."
+npm install --package-lock-only || log "Warning: Failed to update package-lock.json, continuing anyway" 
+# Then install dependencies normally
+npm install || log "Warning: npm install failed, continuing anyway"
 npm run build || log "Warning: Frontend build failed, continuing anyway"
 
 log "Deploying frontend files..."
@@ -626,7 +630,10 @@ pip install -r requirements.txt
 
 echo "Updating frontend..."
 cd "${FRONTEND_DIR}"
-npm ci
+# Update package-lock.json first
+npm install --package-lock-only
+# Then install dependencies normally
+npm install
 npm run build
 
 echo "Copying frontend files..."
