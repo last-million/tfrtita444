@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import UserManagement from '../components/UserManagement'
 import './SystemConfig.css'
 
 export default function SystemConfig() {
+  const { user } = useAuth();
+  const isHamza = user?.username === 'hamza';
   const [tools, setTools] = useState([
     {
       id: 'calendar',
@@ -185,6 +189,15 @@ export default function SystemConfig() {
           Save Configuration
         </button>
       </div>
+
+      {/* User Management Section - only visible to hamza */}
+      {isHamza && (
+        <div className="config-section user-management-section mt-8">
+          <h2 className="text-2xl font-bold mb-4">User Management</h2>
+          <p className="mb-4">Manage user accounts and permissions</p>
+          <UserManagement />
+        </div>
+      )}
     </div>
   )
 }
