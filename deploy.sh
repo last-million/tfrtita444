@@ -475,8 +475,8 @@ fi
 log "Setting up frontend..."
 cd "${FRONTEND_DIR}" || log "Warning: Could not change to frontend directory"
 
-# Create frontend .env file
-log "Creating frontend .env file..."
+# Create frontend .env file - Always use HTTPS
+log "Creating frontend .env file with HTTPS URLs..."
 cat > "${FRONTEND_DIR}/.env" << EOF
 VITE_API_URL=https://${DOMAIN}/api
 VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
@@ -572,7 +572,7 @@ mkdir -p /etc/nginx/sites-enabled || true
 # Create Nginx configuration
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 
-# Create basic configuration
+# Create basic configuration for HTTP - will be modified by Certbot for HTTPS
 cat > ${NGINX_CONF} << EOF
 server {
     listen 80;
@@ -603,6 +603,39 @@ EOF
 ln -sf ${NGINX_CONF} /etc/nginx/sites-enabled/ || log "Warning: Failed to enable site"
 rm -f /etc/nginx/sites-enabled/default || true
 nginx -t && systemctl restart nginx || log "Warning: Nginx configuration failed"
+
+# Set up HTTPS with Certbot
+log "Setting up HTTPS with Certbot..."
+certbot --nginx --non-interactive --agree-tos --email ${EMAIL} -d ${DOMAIN} -d www.${DOMAIN} || log "Warning: Certbot HTTPS setup failed, continuing with HTTP only"
+
+# Verify if Certbot was successful by checking for SSL configuration
+if grep -q "ssl_certificate" ${NGINX_CONF}; then
+  log "HTTPS setup successful! Site is now available over HTTPS."
+  
+  # Update frontend .env file to use HTTPS
+  log "Updating frontend environment to use HTTPS..."
+  cat > "${FRONTEND_DIR}/.env" << EOF
+VITE_API_URL=https://${DOMAIN}/api
+VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
+VITE_GOOGLE_CLIENT_ID=placeholder-value
+EOF
+  
+  # Rebuild frontend with HTTPS URLs
+  log "Rebuilding frontend with HTTPS URLs..."
+  cd "${FRONTEND_DIR}"
+  npm run build || log "Warning: Frontend rebuild failed, continuing anyway"
+  
+  # Redeploy frontend files
+  if [ -d "dist" ]; then
+    cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy some frontend files"
+  fi
+  
+  # Add Certbot renewal cron job
+  log "Setting up automatic SSL certificate renewal..."
+  (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet") | crontab -
+else
+  log "HTTPS setup was not successful. Site will continue to use HTTP."
+fi
 
 # -----------------------------------------------------------
 # XII. FINAL CLEANUP
