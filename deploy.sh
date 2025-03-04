@@ -145,6 +145,10 @@ check_error "Failed to apply iptables rules"
 
 # Make iptables rules persistent across reboots
 log "Making iptables rules persistent..."
+# Prevent interactive prompts during installation
+export DEBIAN_FRONTEND=noninteractive
+echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
+echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
 apt install -y iptables-persistent
 netfilter-persistent save
 netfilter-persistent reload
