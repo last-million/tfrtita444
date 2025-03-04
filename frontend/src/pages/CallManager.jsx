@@ -80,15 +80,30 @@ function CallManager() {
         return;
     }
 
-    // Implement actual call initiation logic
+    // Implement actual call initiation logic with proper error handling
     for (const number of numbers) {
         try {
+            // Create a properly formatted Ultravox API URL based on latest documentation
+            // Format: https://api.ultravox.ai/api/v1/calls/{callId}/join
+            // We need to generate a callId or use the Ultravox service to create one
+            const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
+            
+            console.log(`Initiating call to ${number} with Ultravox URL: ${ultravoxUrl}`);
+            
             // Call the initiate API with the phone number and Ultravox URL
-            await api.calls.initiate(number, `wss://api.ultravox.ai/media/${ultravoxApiKey}`);
-            console.log(`Call initiated to ${number}`);
+            const response = await api.calls.initiate(number, ultravoxUrl);
+            console.log(`Call initiated to ${number}`, response);
         } catch (error) {
             console.error(`Failed to initiate call to ${number}:`, error);
-            alert(`Failed to initiate call to ${number}: ${error.message}`);
+            
+            // Provide more detailed error information
+            let errorMessage = error.message;
+            if (error.response) {
+                errorMessage = `Status ${error.response.status}: ${error.response.data?.detail || error.message}`;
+                console.error('Error details:', error.response.data);
+            }
+            
+            alert(`Failed to initiate call to ${number}: ${errorMessage}`);
         }
     }
 
