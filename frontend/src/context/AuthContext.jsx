@@ -5,31 +5,82 @@ import axios from 'axios';
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState({ username: 'default_user' }); // Always set a default user
-  const [loading, setLoading] = useState(false); // No loading needed
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // No need to check authentication on load
+  // Check for existing authentication on load
   useEffect(() => {
-    // Set a dummy token to ensure all API calls work
-    localStorage.setItem('token', 'dummy_token');
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        // Set the auth header
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        
+        // Verify token by calling the auth/me endpoint
+        const response = await axios.get('/api/auth/me');
+        
+        // Set user data from the response
+        setUser({
+          username: response.data.username,
+          isAdmin: response.data.is_admin,
+        });
+      } catch (error) {
+        // Clear invalid auth data
+        localStorage.removeItem('token');
+        delete axios.defaults.headers.common['Authorization'];
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
   }, []);
 
-  // Simplified checkAuth that always succeeds
-  const checkAuth = async () => {
-    return true;
-  };
-
-  // Simplified login that always succeeds
+  // Login function to authenticate users
   const login = async (username, password) => {
-    // No need to actually call the API
-    localStorage.setItem('token', 'dummy_token');
-    setUser({ username: username || 'default_user' });
-    return true;
+    try {
+      const response = await axios.post('/api/auth/token', {
+        username,
+        password
+      });
+
+      const { access_token } = response.data;
+      
+      // Store auth data
+      localStorage.setItem('token', access_token);
+      
+      // Set auth header for future requests
+      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      
+      // Update user state
+      setUser({
+        username: username,
+        isAdmin: username === 'hamza' // Assume hamza is admin
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
+    }
   };
 
+  // Logout function
   const logout = () => {
-    // No real logout needed, but keep the function for compatibility
-    // Don't remove the token so the user stays logged in
+    // Clear auth data
+    localStorage.removeItem('token');
+    
+    // Remove auth header
+    delete axios.defaults.headers.common['Authorization'];
+    
+    // Reset user state
+    setUser(null);
   };
 
   return (
