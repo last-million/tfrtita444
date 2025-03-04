@@ -433,15 +433,26 @@ log "Setting up authentication routes..."
 mkdir -p "${BACKEND_DIR}/app/routes" || true
 touch "${BACKEND_DIR}/app/routes/__init__.py" || true
 
-# Create auth.py file for login
+# Create auth.py file for login - with enhanced request handling
 log "Creating auth routes file..."
 cat > "${BACKEND_DIR}/app/routes/auth.py" << 'EOF'
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request, Form, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from typing import Optional
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Define request model
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 router = APIRouter(tags=["authentication"])
 
@@ -459,26 +470,88 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+# Handle both form data and JSON requests
 @router.post("/token")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Hard-coded check for demo purposes
-    if form_data.username != "hamza" or form_data.password != "AFINasahbi@-11":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+async def login_for_access_token(request: Request):
+    try:
+        # Log the request for debugging
+        logger.debug(f"Received login request: {request.headers.get('content-type')}")
+        
+        # Try to parse the request data
+        username = None
+        password = None
+        
+        content_type = request.headers.get('content-type', '')
+        
+        if 'application/json' in content_type:
+            # Handle JSON data
+            data = await request.json()
+            username = data.get('username')
+            password = data.get('password')
+            logger.debug(f"Parsed JSON request: username={username}")
+        elif 'application/x-www-form-urlencoded' in content_type:
+            # Handle form data
+            form_data = await request.form()
+            username = form_data.get('username')
+            password = form_data.get('password')
+            logger.debug(f"Parsed form request: username={username}")
+        elif 'multipart/form-data' in content_type:
+            # Handle multipart form data
+            form_data = await request.form()
+            username = form_data.get('username')
+            password = form_data.get('password')
+            logger.debug(f"Parsed multipart request: username={username}")
+        else:
+            # Fall back to raw parsing
+            body = await request.body()
+            text = body.decode()
+            logger.debug(f"Unknown content type: {content_type}, raw body: {text[:100]}")
+            
+            # Try to extract username and password from raw data
+            parts = text.split('&')
+            for part in parts:
+                if '=' in part:
+                    key, value = part.split('=', 1)
+                    if key == 'username':
+                        username = value
+                    elif key == 'password':
+                        password = value
+        
+        # Check credentials (hardcoded for simplicity)
+        if not username or not password:
+            logger.error("Missing username or password")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing username or password"
+            )
+            
+        logger.debug(f"Checking credentials: {username}")
+        if username != "hamza" or password != "AFINasahbi@-11":
+            logger.error(f"Invalid credentials for user: {username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Generate token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": username}, expires_delta=access_token_expires
         )
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": form_data.username}, expires_delta=access_token_expires
-    )
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "username": form_data.username
-    }
+        
+        logger.debug(f"Login successful for user: {username}")
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "username": username
+        }
+    except Exception as e:
+        logger.exception(f"Login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )
 
 @router.get("/me")
 async def read_users_me(token: str = None):
@@ -501,6 +574,11 @@ async def read_users_me(token: str = None):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
+
+# Add a health check endpoint specifically for auth
+@router.get("/health")
+async def auth_health_check():
+    return {"status": "auth_service_healthy", "timestamp": datetime.utcnow().isoformat()}
 EOF
 
 # Create main.py with proper route imports
@@ -611,6 +689,39 @@ log "Creating systemd service..."
 mkdir -p /var/log/tfrtita333 || true
 chown -R $(whoami):$(whoami) /var/log/tfrtita333 || true
 
+# Ensure all backend dependencies are installed first
+log "Installing final backend dependencies for authentication..."
+pip install gunicorn uvicorn fastapi python-jose[cryptography] passlib[bcrypt] python-multipart requests || log "Warning: Failed to install critical dependencies"
+
+# Create a standalone test script to verify the backend
+log "Creating test script for auth endpoint..."
+cat > "${BACKEND_DIR}/test_auth.py" << 'EOF'
+import requests
+import json
+import sys
+
+# Try to test login endpoint
+try:
+    print("Testing auth endpoint directly...")
+    response = requests.post(
+        "http://localhost:8080/api/auth/token",
+        data={"username": "hamza", "password": "AFINasahbi@-11"}
+    )
+    print(f"Status code: {response.status_code}")
+    print(f"Response: {response.text}")
+    
+    if response.status_code == 200:
+        print("AUTH TEST SUCCESSFUL!")
+    else:
+        print("AUTH TEST FAILED!")
+    
+except Exception as e:
+    print(f"Error testing auth endpoint: {str(e)}")
+    sys.exit(1)
+EOF
+
+# Create systemd service to run FastAPI directly without gunicorn
+log "Creating direct FastAPI service for better debugging..."
 cat > ${SERVICE_FILE} << EOF
 [Unit]
 Description=Tfrtita333 App Backend
@@ -622,15 +733,15 @@ User=$(whoami)
 WorkingDirectory=${BACKEND_DIR}
 Environment="PATH=${APP_DIR}/venv/bin"
 Environment="PYTHONPATH=${BACKEND_DIR}"
-ExecStart=${APP_DIR}/venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 --bind 127.0.0.1:8080 --access-logfile /var/log/tfrtita333/access.log --error-logfile /var/log/tfrtita333/error.log app.main:app
+# Use direct uvicorn instead of gunicorn for simpler debugging
+ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-level debug
 Restart=always
 RestartSec=5
 StartLimitIntervalSec=0
 
-# Hardening
-PrivateTmp=true
-ProtectSystem=full
-NoNewPrivileges=true
+# Logging
+StandardOutput=append:/var/log/tfrtita333/output.log
+StandardError=append:/var/log/tfrtita333/error.log
 
 [Install]
 WantedBy=multi-user.target
@@ -651,32 +762,115 @@ mkdir -p /etc/nginx/sites-enabled || true
 # Create Nginx configuration
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 
-# Create basic configuration for HTTP - will be modified by Certbot for HTTPS
+# Create a direct API test file to verify auth is working
+log "Creating direct API test file..."
+cat > "/tmp/test-auth.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Test</title>
+    <script>
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('password', password);
+            
+            try {
+                const response = await fetch('/api/auth/token', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.text();
+                document.getElementById('result').innerText = 
+                    `Status: ${response.status}\nResponse: ${result}`;
+            } catch (error) {
+                document.getElementById('result').innerText = 
+                    `Error: ${error.message}`;
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Auth Test</h1>
+    <div>
+        <label for="username">Username:</label>
+        <input type="text" id="username" value="hamza" /><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" value="AFINasahbi@-11" /><br>
+        <button onclick="testLogin()">Test Login</button>
+    </div>
+    <pre id="result"></pre>
+</body>
+</html>
+EOF
+
+# Copy test file to web directory
+cp "/tmp/test-auth.html" "${WEB_ROOT}/test-auth.html"
+chown www-data:www-data "${WEB_ROOT}/test-auth.html"
+chmod 644 "${WEB_ROOT}/test-auth.html"
+
+# Create ultra-simple Nginx configuration first to verify backend works
+log "Creating simplified Nginx configuration for testing..."
 cat > ${NGINX_CONF} << EOF
 server {
     listen 80;
     server_name ${DOMAIN} www.${DOMAIN};
     
+    # Extremely detailed logging
+    error_log /var/log/nginx/error.log debug;
+    access_log /var/log/nginx/access.log;
+    
+    # Frontend files
     location / {
         root ${WEB_ROOT};
         try_files \$uri \$uri/ /index.html;
     }
     
-    # Fixed API proxy configuration - critical for login to work
-    location /api/ {
-        # Notice: removed trailing slash in proxy_pass to fix path handling
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
+    # Critical API proxy fix - using exact location and no trailing slash
+    location /api/auth/token {
+        # Direct pass to backend with debug headers
+        proxy_pass http://127.0.0.1:8080/api/auth/token;
+        
+        # Full proxy headers
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 300;
-        proxy_send_timeout 300;
-        proxy_read_timeout 300;
-        send_timeout 300;
+        
+        # Extended timeouts
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        send_timeout 300s;
+        
+        # Debug headers
+        add_header X-Debug-Backend "http://127.0.0.1:8080/api/auth/token";
+        add_header X-Debug-Host \$host;
     }
     
+    # General API proxy for other endpoints
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        
+        # Full proxy headers
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # Extended timeouts
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        send_timeout 300s;
+    }
+    
+    # WebSocket configuration
     location /ws {
         proxy_pass http://127.0.0.1:8080/ws;
         proxy_http_version 1.1;
@@ -685,10 +879,6 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
     }
-    
-    # Error logs for debugging
-    access_log /var/log/nginx/${DOMAIN}_access.log;
-    error_log /var/log/nginx/${DOMAIN}_error.log debug;
 }
 EOF
 
