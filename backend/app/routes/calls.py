@@ -55,11 +55,47 @@ async def initiate_call(
     Initiate an outbound call via Twilio, optionally connecting to Ultravox
     """
     try:
+        # Log the request details
+        logger.info(f"Call initiation request - To: {to_number}, From: {from_number}, Ultravox URL: {ultravox_url}")
+        
+        # Check if Twilio is configured
+        if not twilio_service.credentials_valid:
+            logger.error("Twilio credentials are not configured properly")
+            raise HTTPException(
+                status_code=503, 
+                detail="Twilio service is not properly configured. Please check your Twilio credentials."
+            )
+        
+        # Validate phone numbers
+        if not to_number or not to_number.startswith('+'):
+            raise HTTPException(
+                status_code=400, 
+                detail="The 'to_number' must be a valid phone number in E.164 format (+XXXXXXXXXXXX)"
+            )
+            
+        # Format Ultravox URL if provided
+        if ultravox_url:
+            logger.info(f"Using Ultravox integration with URL: {ultravox_url}")
+            # Make sure the URL is properly formatted according to Ultravox documentation
+            if not ultravox_url.startswith(('https://', 'wss://')):
+                ultravox_url = f"wss://{ultravox_url.lstrip('/')}"
+                
+        # Initiate the call
         call_details = await twilio_service.make_call(to_number, from_number, ultravox_url)
+        logger.info(f"Call initiated successfully: {call_details}")
         return call_details
+        
     except Exception as e:
-        logger.error(f"Call initiation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Call initiation failed: {str(e)}", exc_info=True)
+        status_code = 500
+        
+        # Provide more specific error codes based on the exception
+        if "invalid phone number" in str(e).lower():
+            status_code = 400
+        elif "configuration" in str(e).lower() or "credentials" in str(e).lower():
+            status_code = 503
+            
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 @router.post("/bulk")
 async def bulk_call_campaign(request: BulkCallRequest, user=Depends(verify_token)):
@@ -219,23 +255,49 @@ async def incoming_call(request: Request):
     """
     Handle the inbound call from Twilio.
     """
-    form_data = await request.form()
-    twilio_params = dict(form_data)
-    print('Incoming call')
+    try:
+        form_data = await request.form()
+        twilio_params = dict(form_data)
+        logger.info(f"Incoming call received: {twilio_params}")
 
-    caller_number = twilio_params.get('From', 'Unknown')
-    call_sid = twilio_params.get('CallSid')
+        caller_number = twilio_params.get('From', 'Unknown')
+        call_sid = twilio_params.get('CallSid')
 
-    # Use the configured server domain from settings
-    server_domain = settings.server_domain
-    stream_url = f"wss://{server_domain}/media-stream"
+        if not call_sid:
+            logger.error("Missing CallSid in Twilio request")
+            raise HTTPException(status_code=400, detail="Missing CallSid parameter")
 
-    twiml = VoiceResponse()
-    connect = Connect()
-    stream = Stream(url=stream_url)
-    stream.parameter(name="callSid", value=call_sid)
-    stream.parameter(name="callerNumber", value=caller_number)
-    connect.append(stream)
-    twiml.append(connect)
+        # Use the configured server domain from settings
+        server_domain = settings.server_domain
+        stream_url = f"wss://{server_domain}/media-stream"
 
-    return Response(content=str(twiml), media_type="application/xml")
+        logger.info(f"Creating TwiML response with stream URL: {stream_url}")
+        twiml = VoiceResponse()
+        connect = Connect()
+        stream = Stream(url=stream_url)
+        stream.parameter(name="callSid", value=call_sid)
+        stream.parameter(name="callerNumber", value=caller_number)
+        connect.append(stream)
+        twiml.append(connect)
+
+        # Log the TwiML for debugging
+        twiml_str = str(twiml)
+        logger.debug(f"Generated TwiML: {twiml_str}")
+
+        # Important: Set Content-Type to text/xml for Twilio
+        return Response(
+            content=twiml_str, 
+            media_type="text/xml", 
+            headers={"Content-Type": "text/xml; charset=utf-8"}
+        )
+    except Exception as e:
+        logger.error(f"Error handling incoming call: {str(e)}", exc_info=True)
+        # Still return valid TwiML even in case of error to avoid Twilio retry cycles
+        error_twiml = VoiceResponse()
+        error_twiml.say("We're sorry, but we're experiencing technical difficulties. Please try your call again later.")
+        error_twiml.hangup()
+        return Response(
+            content=str(error_twiml), 
+            media_type="text/xml",
+            headers={"Content-Type": "text/xml; charset=utf-8"}
+        )
