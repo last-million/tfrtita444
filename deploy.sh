@@ -1001,11 +1001,12 @@ cat > "${WEB_ROOT}/api/auth/success.json" << EOF
 }
 EOF
 
-# Create static JSON response files for credential status endpoints
-log "Creating static JSON response files for credential status endpoints..."
+# Create static JSON response files for credential status and dashboard endpoints
+log "Creating static JSON response files for API endpoints..."
 
-# Create directory for static responses
+# Create directories for static responses
 mkdir -p "${WEB_ROOT}/api/credentials/status"
+mkdir -p "${WEB_ROOT}/api/dashboard"
 
 # Create Twilio response
 cat > "${WEB_ROOT}/api/credentials/status/Twilio.json" << EOF
@@ -1051,7 +1052,42 @@ cat > "${WEB_ROOT}/api/credentials/status/Ultravox.json" << EOF
 }
 EOF
 
-# Set permissions for the credential status files
+# Create dashboard stats response
+cat > "${WEB_ROOT}/api/dashboard/stats.json" << EOF
+{
+  "totalCalls": 25,
+  "activeServices": 4,
+  "knowledgeBaseDocuments": 14,
+  "aiResponseAccuracy": "92%",
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+
+# Create dashboard recent activities response
+cat > "${WEB_ROOT}/api/dashboard/recent-activities.json" << EOF
+[
+  {
+    "id": "call_123456",
+    "type": "Call",
+    "description": "Outbound call to +1234567890",
+    "timestamp": "2 hours ago"
+  },
+  {
+    "id": "doc_789012",
+    "type": "Document",
+    "description": "Vectorized Product Manual.pdf",
+    "timestamp": "3 hours ago"
+  },
+  {
+    "id": "call_345678",
+    "type": "Call",
+    "description": "Inbound call from +0987654321",
+    "timestamp": "1 day ago"
+  }
+]
+EOF
+
+# Set permissions for the static files
 chown -R www-data:www-data "${WEB_ROOT}/api"
 chmod -R 755 "${WEB_ROOT}/api"
 
@@ -1105,6 +1141,36 @@ server {
         try_files /api/credentials/status/\$service.json @credential_status_fallback;
         
         # CORS headers for credential status responses
+        add_header 'Content-Type' 'application/json' always;
+    }
+    
+    # Dashboard stats endpoint
+    location = /api/dashboard/stats {
+        # Handle OPTIONS request (CORS preflight)
+        if (\$request_method = 'OPTIONS') {
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        # Serve the static JSON file
+        try_files /api/dashboard/stats.json =404;
+        add_header 'Content-Type' 'application/json' always;
+    }
+    
+    # Dashboard recent activities endpoint
+    location = /api/dashboard/recent-activities {
+        # Handle OPTIONS request (CORS preflight)
+        if (\$request_method = 'OPTIONS') {
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        # Serve the static JSON file
+        try_files /api/dashboard/recent-activities.json =404;
         add_header 'Content-Type' 'application/json' always;
     }
     
