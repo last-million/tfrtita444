@@ -951,26 +951,32 @@ ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 # Restart Nginx with the fixed configuration
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-# Creating a minimal API server focused only on handling the login correctly
-log "Creating a super-minimal main.py focused only on login..."
-cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
-from fastapi import FastAPI, Request, HTTPException, status
+# Create a direct standalone login service on a new port (8080)
+log "Creating a standalone login service..."
+
+# Create a dedicated, ultra-simple login server file
+cat > "${APP_DIR}/login_server.py" << 'EOF'
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+import json
 from datetime import datetime, timedelta
 from jose import jwt
-import traceback
+import uvicorn
+import sys
 
-# Setup detailed logging
+# Configure detailed logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("login_server.log")
+    ]
 )
-logger = logging.getLogger("api")
+logger = logging.getLogger("login_api")
 
-# Create FastAPI app
 app = FastAPI()
 
 # Allow all origins for CORS
@@ -982,91 +988,122 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT settings
+# JWT configuration
 SECRET_KEY = "strong-secret-key-for-jwt-tokens"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Create JWT token
 def create_token(username):
     expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"sub": username, "exp": expires}
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token
 
-# Root endpoint
 @app.get("/")
-def read_root():
-    logger.info("Root endpoint called")
-    return {"status": "ok"}
+async def health_check():
+    logger.info("Health check requested")
+    return {"status": "healthy", "service": "login_api", "timestamp": str(datetime.now())}
 
-# Login endpoint
-@app.post("/auth/token")
+@app.post("/login")
 async def login(request: Request):
-    logger.info("Login endpoint called")
+    logger.info("Login endpoint hit")
+    
     try:
-        # Get request body as JSON
+        # Get body content
+        body_bytes = await request.body()
+        logger.debug(f"Raw request body: {body_bytes}")
+        
+        # Try to parse as JSON
         try:
-            body = await request.json()
-            logger.info(f"Received JSON data: {body}")
-        except Exception as e:
-            logger.error(f"Failed to parse JSON: {str(e)}")
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={"detail": "Invalid JSON data"}
-            )
+            body = json.loads(body_bytes)
+            logger.info("Successfully parsed request body as JSON")
+        except:
+            logger.warning("Failed to parse body as JSON, trying as form data")
+            try:
+                # Try to handle as form data
+                form_data = await request.form()
+                body = dict(form_data)
+                logger.info("Successfully parsed request body as form data")
+            except:
+                logger.error("Could not parse request body")
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Could not parse request body"}
+                )
         
         # Extract username and password
         username = body.get("username")
         password = body.get("password")
         
-        # Log attempt (but not password)
         logger.info(f"Login attempt for user: {username}")
         
-        # Check credentials
+        # Validate credentials
         if not username or not password:
+            logger.warning("Missing username or password")
             return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 content={"detail": "Username and password required"}
             )
         
-        # Hardcoded check - just for testing
+        # Hardcoded credentials check
         if username == "hamza" and password == "AFINasahbi@-11":
-            # Generate token
             token = create_token(username)
             logger.info(f"Login successful for user: {username}")
-            return {
-                "access_token": token,
-                "token_type": "bearer",
-                "username": username
-            }
+            
+            return JSONResponse(
+                content={
+                    "access_token": token,
+                    "token_type": "bearer",
+                    "username": username
+                }
+            )
         else:
             logger.warning(f"Invalid credentials for user: {username}")
             return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=401,
                 content={"detail": "Incorrect username or password"}
             )
+            
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.exception(f"Login error: {str(e)}")
         return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             content={"detail": f"Server error: {str(e)}"}
         )
 
-# API version of login endpoint with same implementation
-@app.post("/api/auth/token")
-async def api_login(request: Request):
-    result = await login(request)
-    return result
+if __name__ == "__main__":
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    logger.info(f"Starting login server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
 EOF
 
-# Restart the backend service to apply the simplified API
-log "Restarting the backend service with minimal API..."
-systemctl restart tfrtita333.service
+# Set up a systemd service for the standalone login server
+log "Setting up login server service..."
+cat > "/etc/systemd/system/login-api.service" << EOF
+[Unit]
+Description=Login API Server for ${DOMAIN}
+After=network.target
 
-# Update Nginx configuration with focus on proper API routing
-log "Updating Nginx configuration with direct path routing..."
+[Service]
+WorkingDirectory=${APP_DIR}
+ExecStart=${APP_DIR}/venv/bin/python ${APP_DIR}/login_server.py 8080
+Restart=always
+User=www-data
+Group=www-data
+Environment="PATH=${APP_DIR}/venv/bin"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start the login service
+log "Starting login server service..."
+systemctl daemon-reload
+systemctl enable login-api.service
+systemctl start login-api.service || log "Warning: Failed to start login service"
+
+# Create an extremely simple Nginx configuration
+log "Creating simplified Nginx configuration..."
 cat > "${NGINX_CONF}" << EOF
 server {
     listen 80;
@@ -1076,38 +1113,246 @@ server {
     root ${WEB_ROOT};
     index index.html;
 
-    # Direct path to login endpoint - most critical
+    # Direct login endpoint with clear debug headers
     location = /api/auth/token {
-        proxy_pass http://127.0.0.1:8000/api/auth/token;
+        add_header X-Debug-Info "Direct login proxy" always;
+        proxy_pass http://127.0.0.1:8080/login;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 60s;
-        proxy_read_timeout 60s;
-        proxy_send_timeout 60s;
+        proxy_connect_timeout 90;
+        proxy_send_timeout 90;
+        proxy_read_timeout 90;
     }
-
-    # General API requests
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 60s;
-        proxy_read_timeout 60s;
-        proxy_send_timeout 60s;
-    }
-
+    
     # Static files and SPA routing
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 }
 EOF
+
+# Create symbolic link to enable the site
+ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
+
+# Test Nginx configuration
+log "Testing Nginx configuration..."
+nginx -t || log "Warning: Nginx configuration test failed"
+
+# Restart Nginx
+log "Restarting Nginx..."
+systemctl restart nginx || log "Warning: Failed to restart Nginx"
+
+# Create client-side test page
+log "Creating login test page..."
+cat > "${WEB_ROOT}/login-test.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Login Test</h1>
+    
+    <div class="form-group">
+        <label for="username">Username:</label>
+        <input type="text" id="username" value="hamza">
+    </div>
+    
+    <div class="form-group">
+        <label for="password">Password:</label>
+        <input type="password" id="password" value="AFINasahbi@-11">
+    </div>
+    
+    <button onclick="testLogin()">Test Login</button>
+    
+    <h3>Result:</h3>
+    <pre id="result"></pre>
+    
+    <script>
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultElement = document.getElementById('result');
+            
+            resultElement.textContent = 'Sending request...';
+            
+            try {
+                const response = await fetch('/api/auth/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password
+                    })
+                });
+                
+                const responseText = await response.text();
+                
+                try {
+                    // Try to parse as JSON
+                    const data = JSON.parse(responseText);
+                    resultElement.textContent = 'Status: ' + response.status + '\n\n' + JSON.stringify(data, null, 2);
+                } catch (e) {
+                    // If not valid JSON, show as text
+                    resultElement.textContent = 'Status: ' + response.status + '\n\nResponse (text):\n' + responseText;
+                }
+            } catch (error) {
+                resultElement.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
+EOF
+
+# Create another test file with form-based submission
+log "Creating form-based login test page..."
+cat > "${WEB_ROOT}/login-form-test.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Form Login Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Form Login Test</h1>
+    
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username" value="hamza">
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" value="AFINasahbi@-11">
+        </div>
+        
+        <button type="submit">Test Login</button>
+    </form>
+    
+    <h3>Result:</h3>
+    <pre id="result"></pre>
+    
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const resultElement = document.getElementById('result');
+            
+            resultElement.textContent = 'Sending request...';
+            
+            try {
+                const response = await fetch('/api/auth/token', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const responseText = await response.text();
+                
+                try {
+                    // Try to parse as JSON
+                    const data = JSON.parse(responseText);
+                    resultElement.textContent = 'Status: ' + response.status + '\n\n' + JSON.stringify(data, null, 2);
+                } catch (e) {
+                    // If not valid JSON, show as text
+                    resultElement.textContent = 'Status: ' + response.status + '\n\nResponse (text):\n' + responseText;
+                }
+            } catch (error) {
+                resultElement.textContent = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
+EOF
+
+log "Deployment complete!"
+log "Your application should now be accessible at http://${DOMAIN}"
+log "Test the login API at http://${DOMAIN}/login-test.html or http://${DOMAIN}/login-form-test.html"
+log "Username: hamza, Password: AFINasahbi@-11"
+
+# Wait for services to stabilize 
+log "Waiting for services to stabilize..."
+sleep 5
+
+# Verify services are running
+log "Checking service status..."
+systemctl status login-api.service --no-pager || true
+systemctl status nginx --no-pager || true
 
 # Create symbolic link to enable the site
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
