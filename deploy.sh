@@ -856,25 +856,15 @@ systemctl enable tfrtita333.service
 systemctl start tfrtita333.service || log "Warning: Failed to start backend service"
 
 # -----------------------------------------------------------
-# XII. CONFIGURE NGINX AND HTTPS
+# XII. CONFIGURE NGINX (HTTP FIRST)
 # -----------------------------------------------------------
-log "Configuring Nginx..."
+log "Configuring initial Nginx for HTTP..."
 
-# Create Nginx server block configuration
+# First create an HTTP-only configuration for Certbot to use
 cat > "${NGINX_CONF}" << EOF
 server {
     listen 80;
     server_name ${DOMAIN} www.${DOMAIN};
-    
-    # Redirect all HTTP requests to HTTPS
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name ${DOMAIN} www.${DOMAIN};
-    
-    # SSL configuration will be added by Certbot
     
     # Root directory for static files
     root ${WEB_ROOT};
@@ -905,6 +895,9 @@ EOF
 # Create symbolic link to enable the site
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 
+# Ensure default site is removed to avoid conflicts
+rm -f /etc/nginx/sites-enabled/default
+
 # Test Nginx configuration
 nginx -t || log "Warning: Nginx configuration test failed"
 
@@ -918,14 +911,26 @@ systemctl restart nginx || log "Warning: Failed to restart Nginx"
 log "Setting up HTTPS with Certbot..."
 
 # Obtain and install SSL certificate with Certbot
-certbot --nginx --non-interactive --agree-tos --email "${EMAIL}" --domains "${DOMAIN},www.${DOMAIN}" || log "Warning: Certbot SSL setup failed, continuing anyway"
+certbot --nginx --non-interactive --agree-tos --email "${EMAIL}" \
+  --domains "${DOMAIN},www.${DOMAIN}" \
+  --redirect --hsts || log "Warning: Certbot SSL setup failed, continuing anyway"
 
 # Update frontend environment file to use HTTPS
 log "Updating frontend environment to use HTTPS..."
 sed -i 's|http://|https://|g' "${FRONTEND_DIR}/.env"
+sed -i 's|ws://|wss://|g' "${FRONTEND_DIR}/.env"
+
+# Rebuild frontend with the updated environment
+log "Rebuilding frontend with HTTPS settings..."
+cd "${FRONTEND_DIR}"
+npm run build || log "Warning: Frontend rebuild failed"
+
+# Copy updated frontend build to web root
+log "Copying updated frontend build to web root..."
+cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy updated frontend build"
 
 # Make sure Nginx is restarted to apply all changes
-systemctl restart nginx
+systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
 log "Deployment complete! Your application should now be running at https://${DOMAIN}"
 log "Login with username: hamza and password: AFINasahbi@-11"
