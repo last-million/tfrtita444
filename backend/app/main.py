@@ -135,23 +135,79 @@ async def root():
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
+# ----- DASHBOARD ENDPOINTS -----
+
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats():
+    """Get dashboard statistics"""
+    logger.info("Fetching dashboard stats")
+    # Mock data that matches what the frontend expects
+    return {
+        "totalCalls": 25,
+        "activeServices": 2,
+        "knowledgeBaseDocuments": 14,
+        "aiResponseAccuracy": "92%"
+    }
+
+@app.get("/api/dashboard/recent-activities")
+async def get_recent_activities():
+    """Get recent dashboard activities"""
+    logger.info("Fetching recent activities")
+    # Mock data for recent activities
+    return [
+        {
+            "id": "call_123456",
+            "type": "Call",
+            "description": "Outbound call to +1234567890",
+            "timestamp": "2 hours ago"
+        },
+        {
+            "id": "doc_789012",
+            "type": "Document",
+            "description": "Vectorized \"Product Manual.pdf\"",
+            "timestamp": "3 hours ago"
+        },
+        {
+            "id": "call_345678",
+            "type": "Call",
+            "description": "Inbound call from +0987654321",
+            "timestamp": "1 day ago"
+        }
+    ]
+
+# Also support the incorrect paths for dashboard endpoints
+@app.get("/api/api/dashboard/stats")
+async def get_dashboard_stats_alt_path():
+    """Handle the incorrect double /api/api/ path for dashboard stats"""
+    logger.info("Fetching dashboard stats (alt path)")
+    return await get_dashboard_stats()
+
+@app.get("/api/api/dashboard/recent-activities")
+async def get_recent_activities_alt_path():
+    """Handle the incorrect double /api/api/ path for recent activities"""
+    logger.info("Fetching recent activities (alt path)")
+    return await get_recent_activities()
+
 # ----- CREDENTIAL STATUS ENDPOINTS -----
 
-# Add service status endpoint - FIXING THE DOUBLE /api/api/ PATH ISSUE
 @app.get("/api/credentials/status/{service}")
 async def get_service_status(service: str):
     """Get the status of a service integration"""
     logger.info(f"Checking status for service: {service}")
     
-    # Mock response for service status
+    # Create a more complete mock response with the "connected" field the frontend expects
+    connected = False
+    if service == "Twilio" or service == "Supabase":
+        connected = True
+        
     return {
         "service": service,
-        "status": "not_configured",
-        "message": f"{service} is not yet configured",
+        "connected": connected,
+        "status": "configured" if connected else "not_configured",
+        "message": f"{service} is {'successfully configured' if connected else 'not configured'}",
         "last_checked": datetime.utcnow().isoformat()
     }
 
-# Also support the incorrect path that the frontend might be using
 @app.get("/api/api/credentials/status/{service}")
 async def get_service_status_alt_path(service: str):
     """Handle the incorrect double /api/api/ path"""
