@@ -1,8 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any
 from ..services.credential_validator import credential_validator
-from ..middleware.auth import verify_token
 import logging
 
 router = APIRouter()
@@ -45,9 +44,6 @@ async def get_credential_status(service_name: str):
     try:
         # In a real implementation, you would check if the service is actually connected
         # For example, by making a test API call to the service
-        
-        # For now, this is a simplified implementation
-        # We'll assume that if the credentials exist, the service is connected
         
         # This is a hardcoded list for dev/test environments
         services_connected = {
