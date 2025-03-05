@@ -816,10 +816,4 @@ log "Configuring Nginx..."
 mkdir -p /etc/nginx/sites-available || true
 mkdir -p /etc/nginx/sites-enabled || true
 
-# Create Nginx configuration - THIS IS THE CRITICAL PART THAT FIXES THE LOGIN
-log "Creating optimized Nginx configuration for reliable API proxy..."
-cat > ${NGINX_CONF} << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN} www.
+# Create
