@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Dashboard.css'
 import { api } from '../services/api';
+import ServiceStatusAPI from '../services/ServiceStatusAPI';
 
 // Import new components
 import CallAnalyticsChart from '../components/CallAnalyticsChart';
@@ -55,20 +56,31 @@ function Dashboard() {
   // Fetch dashboard stats from the backend API
   const fetchDashboardStats = async () => {
     try {
-      const response = await api.get('/api/dashboard/stats');
+      // Remove duplicate /api prefix since it's already in the base URL
+      const response = await api.get('/dashboard/stats');
       setStats(response.data);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
+      // Set default values if API fails
+      setStats({
+        totalCalls: 0,
+        activeServices: 0,
+        knowledgeBaseDocuments: 0,
+        aiResponseAccuracy: '85%'
+      });
     }
   };
 
   // Fetch recent activities from the backend
   const fetchRecentActivities = async () => {
     try {
-      const response = await api.get('/api/dashboard/recent-activities');
+      // Remove duplicate /api prefix since it's already in the base URL
+      const response = await api.get('/dashboard/recent-activities');
       setRecentActivities(response.data);
     } catch (error) {
       console.error("Error fetching recent activities:", error);
+      // Set empty array if API fails
+      setRecentActivities([]);
     }
   };
 
@@ -80,10 +92,12 @@ function Dashboard() {
       // Get status for each service
       for (let i = 0; i < updatedServices.length; i++) {
         try {
-          const response = await api.services.getStatus(updatedServices[i].name);
+          const response = await ServiceStatusAPI.getStatus(updatedServices[i].name);
           updatedServices[i].connected = response.data.connected;
         } catch (err) {
           console.error(`Error getting status for ${updatedServices[i].name}:`, err);
+          // Set to false if there's an error
+          updatedServices[i].connected = false;
         }
       }
       
