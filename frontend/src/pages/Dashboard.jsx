@@ -9,8 +9,8 @@ import SystemHealthIndicators from '../components/SystemHealthIndicators';
 import NotificationsPanel from '../components/NotificationsPanel';
 import QuickActionCards from '../components/QuickActionCards';
 
-// Hardcoded API URL as fallback
-const API_BASE_URL = 'http://localhost:8081/api';
+// Use relative URL to ensure it works in any environment
+const API_BASE_URL = '/api';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -55,27 +55,48 @@ function Dashboard() {
   const [recentActivities, setRecentActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Helper for making authenticated API requests
+  // Helper for making authenticated API requests with better error handling
   const makeRequest = async (url) => {
     try {
       const token = localStorage.getItem('token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       
-      const response = await axios.get(`${API_BASE_URL}${url}`, { headers });
-      return response.data;
+      // Add timeout and retry logic
+      const response = await axios.get(`${API_BASE_URL}${url}`, { 
+        headers,
+        timeout: 5000, // 5 second timeout
+        maxRetries: 1,
+        validateStatus: function (status) {
+          // Consider any status less than 500 as a success
+          return status < 500;
+        }
+      });
+      
+      if (response.status >= 200 && response.status < 300) {
+        return response.data;
+      } else {
+        // Handle non-200 responses gracefully
+        console.warn(`API returned status ${response.status} for ${url}`);
+        return null;
+      }
     } catch (error) {
-      console.error(`Error making request to ${url}:`, error);
-      throw error;
+      // Log error but don't crash
+      if (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED') {
+        console.warn(`Network error accessing ${url} - API might be unavailable`);
+      } else {
+        console.error(`Error making request to ${url}:`, error);
+      }
+      return null;
     }
   };
 
   // Fetch dashboard stats from the backend API
   const fetchDashboardStats = async () => {
-    try {
-      const data = await makeRequest('/dashboard/stats');
+    const data = await makeRequest('/dashboard/stats');
+    
+    if (data) {
       setStats(data);
-    } catch (error) {
-      console.error("Error fetching dashboard stats:", error);
+    } else {
       // Set default values if API fails
       setStats({
         totalCalls: 0,
@@ -88,11 +109,11 @@ function Dashboard() {
 
   // Fetch recent activities from the backend
   const fetchRecentActivities = async () => {
-    try {
-      const data = await makeRequest('/dashboard/recent-activities');
+    const data = await makeRequest('/dashboard/recent-activities');
+    
+    if (data && Array.isArray(data)) {
       setRecentActivities(data);
-    } catch (error) {
-      console.error("Error fetching recent activities:", error);
+    } else {
       // Set empty array if API fails
       setRecentActivities([]);
     }
@@ -105,15 +126,10 @@ function Dashboard() {
       
       // Sequential fetch for each service 
       for (let i = 0; i < updatedServices.length; i++) {
-        try {
-          const data = await makeRequest(`/credentials/status/${updatedServices[i].name}`);
-          updatedServices[i].connected = data?.connected || false;
-        } catch (err) {
-          console.error(`Error getting status for ${updatedServices[i].name}:`, err);
-          updatedServices[i].connected = false;
-        }
+        const data = await makeRequest(`/credentials/status/${updatedServices[i].name}`);
+        updatedServices[i].connected = data?.connected || false;
       }
-      
+        
       setServices(updatedServices);
       
       // For demo purposes, set some system health statuses based on service connection
@@ -138,9 +154,10 @@ function Dashboard() {
       };
       
       setSystemHealth(healthStatus);
-      
     } catch (error) {
       console.error("Error fetching service status:", error);
+      // Set default values if there's an error
+      setServices(prevServices => prevServices.map(service => ({ ...service, connected: false })));
     }
   };
 
