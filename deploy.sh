@@ -856,7 +856,7 @@ systemctl enable tfrtita333.service
 systemctl start tfrtita333.service || log "Warning: Failed to start backend service"
 
 # -----------------------------------------------------------
-# XII. CONFIGURE NGINX
+# XII. CONFIGURE NGINX AND HTTPS
 # -----------------------------------------------------------
 log "Configuring Nginx..."
 
@@ -865,6 +865,16 @@ cat > "${NGINX_CONF}" << EOF
 server {
     listen 80;
     server_name ${DOMAIN} www.${DOMAIN};
+    
+    # Redirect all HTTP requests to HTTPS
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN} www.${DOMAIN};
+    
+    # SSL configuration will be added by Certbot
     
     # Root directory for static files
     root ${WEB_ROOT};
@@ -902,7 +912,22 @@ nginx -t || log "Warning: Nginx configuration test failed"
 log "Restarting Nginx..."
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-log "Deployment complete! Your application should now be running at http://${DOMAIN}"
+# -----------------------------------------------------------
+# XIII. SET UP HTTPS WITH CERTBOT
+# -----------------------------------------------------------
+log "Setting up HTTPS with Certbot..."
+
+# Obtain and install SSL certificate with Certbot
+certbot --nginx --non-interactive --agree-tos --email "${EMAIL}" --domains "${DOMAIN},www.${DOMAIN}" || log "Warning: Certbot SSL setup failed, continuing anyway"
+
+# Update frontend environment file to use HTTPS
+log "Updating frontend environment to use HTTPS..."
+sed -i 's|http://|https://|g' "${FRONTEND_DIR}/.env"
+
+# Make sure Nginx is restarted to apply all changes
+systemctl restart nginx
+
+log "Deployment complete! Your application should now be running at https://${DOMAIN}"
 log "Login with username: hamza and password: AFINasahbi@-11"
 
 # -----------------------------------------------------------
