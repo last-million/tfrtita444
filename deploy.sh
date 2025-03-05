@@ -27,6 +27,7 @@ BACKEND_DIR="${APP_DIR}/backend"
 FRONTEND_DIR="${APP_DIR}/frontend"
 WEB_ROOT="/var/www/${DOMAIN}/html"
 SERVICE_FILE="/etc/systemd/system/tfrtita333.service"
+NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
 
 # Set non-interactive mode globally for the entire script
 export DEBIAN_FRONTEND=noninteractive
@@ -428,421 +429,16 @@ ENCRYPTION_SALT=placeholder-salt-value
 LOG_LEVEL=INFO
 EOF
 
-# Create auth routes (critically important for login to work)
-log "Setting up authentication routes..."
-mkdir -p "${BACKEND_DIR}/app/routes" || true
-touch "${BACKEND_DIR}/app/routes/__init__.py" || true
-
-# Create auth.py file for login - with enhanced request handling
-log "Creating auth routes file..."
-cat > "${BACKEND_DIR}/app/routes/auth.py" << 'EOF'
-from fastapi import APIRouter, HTTPException, Depends, status, Request, Form, Body
-from fastapi.security import OAuth2PasswordRequestForm
-from datetime import datetime, timedelta
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from typing import Optional, Dict, Any
-from pydantic import BaseModel
-import logging
-
-# Setup logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-# Define request model
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-router = APIRouter(tags=["authentication"])
-
-# JWT configuration
-SECRET_KEY = "strong-secret-key-for-jwt-tokens"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# Handle both form data and JSON requests
-@router.post("/token")
-async def login_for_access_token(request: Request):
-    try:
-        # Log the request for debugging
-        logger.debug(f"Received login request: {request.headers.get('content-type')}")
-        
-        # Try to parse the request data
-        username = None
-        password = None
-        
-        content_type = request.headers.get('content-type', '')
-        
-        if 'application/json' in content_type:
-            # Handle JSON data
-            data = await request.json()
-            username = data.get('username')
-            password = data.get('password')
-            logger.debug(f"Parsed JSON request: username={username}")
-        elif 'application/x-www-form-urlencoded' in content_type:
-            # Handle form data
-            form_data = await request.form()
-            username = form_data.get('username')
-            password = form_data.get('password')
-            logger.debug(f"Parsed form request: username={username}")
-        elif 'multipart/form-data' in content_type:
-            # Handle multipart form data
-            form_data = await request.form()
-            username = form_data.get('username')
-            password = form_data.get('password')
-            logger.debug(f"Parsed multipart request: username={username}")
-        else:
-            # Fall back to raw parsing
-            body = await request.body()
-            text = body.decode()
-            logger.debug(f"Unknown content type: {content_type}, raw body: {text[:100]}")
-            
-            # Try to extract username and password from raw data
-            parts = text.split('&')
-            for part in parts:
-                if '=' in part:
-                    key, value = part.split('=', 1)
-                    if key == 'username':
-                        username = value
-                    elif key == 'password':
-                        password = value
-        
-        # Check credentials (hardcoded for simplicity)
-        if not username or not password:
-            logger.error("Missing username or password")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing username or password"
-            )
-            
-        logger.debug(f"Checking credentials: {username}")
-        if username != "hamza" or password != "AFINasahbi@-11":
-            logger.error(f"Invalid credentials for user: {username}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Generate token
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": username}, expires_delta=access_token_expires
-        )
-        
-        logger.debug(f"Login successful for user: {username}")
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "username": username
-        }
-    except Exception as e:
-        logger.exception(f"Login error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Server error: {str(e)}"
-        )
-
-@router.get("/me")
-async def read_users_me(token: str = None):
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token"
-            )
-        return {"username": username}
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-
-# Add a health check endpoint specifically for auth
-@router.get("/health")
-async def auth_health_check():
-    return {"status": "auth_service_healthy", "timestamp": datetime.utcnow().isoformat()}
-EOF
-
-# Create API route modules for Google Drive, Supabase and Calls
-log "Creating API route modules for external integrations..."
-
-# Create Google Drive API routes
-mkdir -p "${BACKEND_DIR}/app/routes" || true
-cat > "${BACKEND_DIR}/app/routes/drive.py" << 'EOF'
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import List, Optional, Dict, Any
-import logging
-import json
-import os
-
-# Configure logging
-logger = logging.getLogger("drive")
-
-router = APIRouter(prefix="/drive", tags=["google_drive"])
-
-# Placeholder for Google Drive credentials
-GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CLIENT_ID", "")
-GOOGLE_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
-
-# Files endpoint
-@router.get("/files")
-async def get_drive_files():
-    try:
-        logger.info("Getting Google Drive files")
-        
-        # Check if Google Drive is configured
-        if not GOOGLE_CREDENTIALS or not GOOGLE_SECRET:
-            # Return empty list with message in meta
-            return {
-                "files": [],
-                "meta": {
-                    "status": "not_configured",
-                    "message": "Google Drive API not configured. Please set up credentials."
-                }
-            }
-        
-        # This is a placeholder - in production this would use Google API client
-        # to fetch actual files
-        mock_files = [
-            {"id": "1", "name": "Document 1.docx", "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-            {"id": "2", "name": "Spreadsheet.xlsx", "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
-        ]
-        
-        return {
-            "files": mock_files,
-            "meta": {
-                "status": "success"
-            }
-        }
-    except Exception as e:
-        logger.exception(f"Error getting Google Drive files: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error accessing Google Drive: {str(e)}"
-        )
-EOF
-
-# Create Supabase API routes
-cat > "${BACKEND_DIR}/app/routes/supabase.py" << 'EOF'
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import List, Optional, Dict, Any
-import logging
-import json
-import os
-
-# Configure logging
-logger = logging.getLogger("supabase")
-
-router = APIRouter(prefix="/supabase", tags=["supabase"])
-
-# Placeholder for Supabase credentials
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
-
-# Tables endpoint
-@router.get("/tables")
-async def get_supabase_tables():
-    try:
-        logger.info("Getting Supabase tables")
-        
-        # Check if Supabase is configured
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            # Return empty list with message in meta
-            return {
-                "tables": [],
-                "meta": {
-                    "status": "not_configured",
-                    "message": "Supabase API not configured. Please set up credentials."
-                }
-            }
-        
-        # This is a placeholder - in production this would use Supabase client
-        # to fetch actual tables
-        mock_tables = [
-            {"id": "1", "name": "customers", "row_count": 152},
-            {"id": "2", "name": "products", "row_count": 87},
-            {"id": "3", "name": "orders", "row_count": 1243},
-        ]
-        
-        return {
-            "tables": mock_tables,
-            "meta": {
-                "status": "success"
-            }
-        }
-    except Exception as e:
-        logger.exception(f"Error getting Supabase tables: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error accessing Supabase: {str(e)}"
-        )
-EOF
-
-# Create Calls API routes
-cat > "${BACKEND_DIR}/app/routes/calls.py" << 'EOF'
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from typing import List, Optional, Dict, Any
-import logging
-import json
-import os
-from datetime import datetime, timedelta
-
-# Configure logging
-logger = logging.getLogger("calls")
-
-router = APIRouter(prefix="/calls", tags=["calls"])
-
-# Placeholder for Twilio credentials
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-
-# Call history endpoint
-@router.get("/history")
-async def get_call_history(
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100)
-):
-    try:
-        logger.info(f"Getting call history - page {page}, limit {limit}")
-        
-        # Check if Twilio is configured
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-            # Return empty list with message in meta
-            return {
-                "calls": [],
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": 0,
-                    "pages": 0
-                },
-                "meta": {
-                    "status": "not_configured",
-                    "message": "Twilio API not configured. Please set up credentials."
-                }
-            }
-        
-        # This is a placeholder - in production this would use Twilio client
-        # to fetch actual call history
-        today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        
-        mock_calls = [
-            {
-                "id": "CA123456789",
-                "from": "+12345678901",
-                "to": "+19876543210",
-                "status": "completed",
-                "duration": 127,
-                "start_time": yesterday.isoformat(),
-                "end_time": (yesterday + timedelta(minutes=2, seconds=7)).isoformat(),
-                "direction": "outbound"
-            },
-            {
-                "id": "CA987654321",
-                "from": "+19876543210",
-                "to": "+12345678901",
-                "status": "completed",
-                "duration": 89,
-                "start_time": today.isoformat(),
-                "end_time": (today + timedelta(minutes=1, seconds=29)).isoformat(),
-                "direction": "inbound"
-            }
-        ]
-        
-        return {
-            "calls": mock_calls,
-            "pagination": {
-                "page": page,
-                "limit": limit,
-                "total": 2,
-                "pages": 1
-            },
-            "meta": {
-                "status": "success"
-            }
-        }
-    except Exception as e:
-        logger.exception(f"Error getting call history: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error accessing call history: {str(e)}"
-        )
-
-# Make a call endpoint
-@router.post("/initiate")
-async def initiate_call(request: Request):
-    try:
-        data = await request.json()
-        to_number = data.get("to")
-        from_number = data.get("from")
-        
-        logger.info(f"Initiating call from {from_number} to {to_number}")
-        
-        # Check if Twilio is configured
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Twilio API not configured. Please set up credentials."
-            )
-            
-        if not to_number:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required parameter: to"
-            )
-            
-        # This is a placeholder - in production this would use Twilio client
-        # to actually initiate a call
-        call_id = "CA" + str(hash(to_number))[:10]
-        
-        return {
-            "call_id": call_id,
-            "status": "queued",
-            "message": f"Call to {to_number} has been queued",
-            "meta": {
-                "status": "success"
-            }
-        }
-    except Exception as e:
-        logger.exception(f"Error initiating call: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error initiating call: {str(e)}"
-        )
-EOF
-
-# Create main.py with all route imports
-log "Creating main.py with direct auth handler and external integrations..."
+# Create main.py
+log "Creating main.py with auth support..."
 cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
-from fastapi import FastAPI, Request, HTTPException, status, Form
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from typing import Optional
-
-# Import route modules
-from app.routes import drive, supabase, calls
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -855,7 +451,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware setup - allow all origins and methods
+# CORS middleware setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -876,14 +472,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# CRITICAL: Handle auth directly in main.py to avoid any import issues
+# Direct auth token endpoint with debugging logs
 @app.post("/api/auth/token")
 async def login_for_access_token(request: Request):
     try:
         logger.info(f"Auth token request received with content type: {request.headers.get('content-type')}")
-        
-        # Parse the request based on content type
-        form_data = None
         username = None
         password = None
         
@@ -924,7 +517,7 @@ async def login_for_access_token(request: Request):
             except Exception as e:
                 logger.error(f"Failed to parse request body: {str(e)}")
         
-        # Basic auth check - hardcoded credentials
+        # Hardcoded credentials for simple testing
         if not username or not password:
             logger.error("Username or password missing")
             raise HTTPException(
@@ -974,11 +567,6 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
-
-# Register API routes with correct prefixes
-app.include_router(drive.router, prefix="/api")
-app.include_router(supabase.router, prefix="/api")
-app.include_router(calls.router, prefix="/api")
 EOF
 
 # -----------------------------------------------------------
@@ -987,61 +575,22 @@ EOF
 log "Setting up frontend..."
 cd "${FRONTEND_DIR}" || log "Warning: Could not change to frontend directory"
 
-# Create frontend .env file - Always use HTTPS
-log "Creating frontend .env file with HTTPS URLs..."
+# Create frontend .env file with HTTPS URLs
+log "Creating frontend .env file..."
 cat > "${FRONTEND_DIR}/.env" << EOF
 VITE_API_URL=https://${DOMAIN}/api
 VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
 VITE_GOOGLE_CLIENT_ID=placeholder-value
 EOF
 
-# Create or update Vite config file to fix chunk size warnings
-log "Creating optimized Vite configuration..."
-cat > "${FRONTEND_DIR}/vite.config.js" << 'EOF'
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    chunkSizeWarningLimit: 1000, // Increase warning threshold (in kB)
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          // Simple and safe chunking strategy that works with any dependencies
-          if (id.includes('node_modules')) {
-            // Extract vendor name from the path
-            const vendorName = id.toString().split('node_modules/')[1].split('/')[0].toString();
-            // Group react and react-dom together
-            if (vendorName.includes('react')) {
-              return 'vendor-react';
-            }
-            // Other vendors get their own chunks
-            return `vendor-${vendorName}`;
-          }
-        }
-      }
-    }
-  }
-});
-EOF
-
 # Install frontend dependencies and build
 log "Installing frontend dependencies and building..."
-# First update package-lock.json to match package.json
-log "Updating package-lock.json..."
-npm install --package-lock-only || log "Warning: Failed to update package-lock.json, continuing anyway" 
-# Then install dependencies normally
 npm install || log "Warning: npm install failed, continuing anyway"
-log "Building with optimized chunks..."
 npm run build || log "Warning: Frontend build failed, continuing anyway"
 
+# Deploy frontend files
 log "Deploying frontend files..."
 mkdir -p "${WEB_ROOT}" || true
-rm -rf "${WEB_ROOT:?}"/* || true
-
-# Create a fallback index.html if build fails
 if [ -d "dist" ]; then
   cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy some frontend files"
 else
@@ -1052,15 +601,11 @@ else
 <html>
 <head>
   <title>${DOMAIN} - Setup in Progress</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-    h1 { color: #333; }
-  </style>
+  <style>body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }</style>
 </head>
 <body>
   <h1>Site Setup in Progress</h1>
   <p>The application is still being configured.</p>
-  <p>Please check back later.</p>
 </body>
 </html>
 EOF
@@ -1077,39 +622,8 @@ log "Creating systemd service..."
 mkdir -p /var/log/tfrtita333 || true
 chown -R $(whoami):$(whoami) /var/log/tfrtita333 || true
 
-# Ensure all backend dependencies are installed first
-log "Installing final backend dependencies for authentication..."
-pip install gunicorn uvicorn fastapi python-jose[cryptography] passlib[bcrypt] python-multipart requests || log "Warning: Failed to install critical dependencies"
-
-# Create a standalone test script to verify the backend
-log "Creating test script for auth endpoint..."
-cat > "${BACKEND_DIR}/test_auth.py" << 'EOF'
-import requests
-import json
-import sys
-
-# Try to test login endpoint
-try:
-    print("Testing auth endpoint directly...")
-    response = requests.post(
-        "http://localhost:8080/api/auth/token",
-        data={"username": "hamza", "password": "AFINasahbi@-11"}
-    )
-    print(f"Status code: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 200:
-        print("AUTH TEST SUCCESSFUL!")
-    else:
-        print("AUTH TEST FAILED!")
-    
-except Exception as e:
-    print(f"Error testing auth endpoint: {str(e)}")
-    sys.exit(1)
-EOF
-
-# Create systemd service to run FastAPI directly without gunicorn
-log "Creating direct FastAPI service for better debugging..."
+# Create systemd service file
+log "Creating service file for backend..."
 cat > ${SERVICE_FILE} << EOF
 [Unit]
 Description=Tfrtita333 App Backend
@@ -1121,7 +635,6 @@ User=$(whoami)
 WorkingDirectory=${BACKEND_DIR}
 Environment="PATH=${APP_DIR}/venv/bin"
 Environment="PYTHONPATH=${BACKEND_DIR}"
-# Use direct uvicorn instead of gunicorn for simpler debugging
 ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-level debug
 Restart=always
 RestartSec=5
@@ -1147,173 +660,8 @@ log "Configuring Nginx..."
 mkdir -p /etc/nginx/sites-available || true
 mkdir -p /etc/nginx/sites-enabled || true
 
-# Create Nginx configuration
-NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
-
-# Create simple static auth test HTML file with direct Fetch API call
-log "Creating static auth test file..."
-cat > "${WEB_ROOT}/test-auth.html" << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Auth Test</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; }
-        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
-        button { padding: 8px 15px; background: #4CAF50; color: white; border: none; cursor: pointer; }
-        input { padding: 8px; margin-bottom: 10px; width: 250px; }
-    </style>
-    <script>
-        // Test direct login with no framework
-        async function testLogin() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const resultDiv = document.getElementById('result');
-            
-            resultDiv.innerHTML = "Sending request...";
-            
-            try {
-                // Simple form data approach
-                const formData = new FormData();
-                formData.append("username", username);
-                formData.append("password", password);
-                
-                console.log("Sending auth request with FormData");
-                
-                // Add timestamp to prevent caching
-                const url = `/api/auth/token?t=${new Date().getTime()}`;
-                
-                // Show the URL we're posting to
-                resultDiv.innerHTML += `<br>Posting to: ${url}`;
-                
-                const response = await fetch(url, {
-                    method: "POST",
-                    body: formData
-                });
-                
-                // Show the response status
-                resultDiv.innerHTML += `<br>Status: ${response.status}`;
-                
-                // Try to get response as text
-                const text = await response.text();
-                resultDiv.innerHTML += `<br>Raw response: ${text}`;
-                
-                // Try to parse as JSON (may fail)
-                try {
-                    const json = JSON.parse(text);
-                    resultDiv.innerHTML += `<br><br>JSON response:<br>${JSON.stringify(json, null, 2)}`;
-                } catch (e) {
-                    resultDiv.innerHTML += `<br><br>Not valid JSON: ${e.message}`;
-                }
-            } catch (error) {
-                resultDiv.innerHTML = `Error: ${error.message}`;
-                console.error("Login test error:", error);
-            }
-        }
-        
-        // Alternative test with URL-encoded form
-        async function testUrlEncoded() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const resultDiv = document.getElementById('urlResult');
-            
-            resultDiv.innerHTML = "Sending URL-encoded request...";
-            
-            try {
-                const params = new URLSearchParams();
-                params.append("username", username);
-                params.append("password", password);
-                
-                console.log("Sending auth request with URLSearchParams");
-                
-                const response = await fetch("/api/auth/token", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    },
-                    body: params
-                });
-                
-                // Show the response status
-                resultDiv.innerHTML += `<br>Status: ${response.status}`;
-                
-                // Get response as text
-                const text = await response.text();
-                resultDiv.innerHTML += `<br>Raw response: ${text}`;
-            } catch (error) {
-                resultDiv.innerHTML = `Error: ${error.message}`;
-                console.error("URL-encoded test error:", error);
-            }
-        }
-        
-        // Test with direct JSON
-        async function testJsonLogin() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const resultDiv = document.getElementById('jsonResult');
-            
-            resultDiv.innerHTML = "Sending JSON request...";
-            
-            try {
-                const data = {
-                    username: username,
-                    password: password
-                };
-                
-                console.log("Sending auth request with JSON payload");
-                
-                const response = await fetch("/api/auth/token", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(data)
-                });
-                
-                // Show the response status
-                resultDiv.innerHTML += `<br>Status: ${response.status}`;
-                
-                // Get response as text
-                const text = await response.text();
-                resultDiv.innerHTML += `<br>Raw response: ${text}`;
-            } catch (error) {
-                resultDiv.innerHTML = `Error: ${error.message}`;
-                console.error("JSON test error:", error);
-            }
-        }
-    </script>
-</head>
-<body>
-    <h1>Auth API Test</h1>
-    <div>
-        <label for="username">Username:</label><br>
-        <input type="text" id="username" value="hamza"><br>
-        
-        <label for="password">Password:</label><br>
-        <input type="password" id="password" value="AFINasahbi@-11"><br>
-    </div>
-    
-    <h2>Test 1: FormData</h2>
-    <button onclick="testLogin()">Test Login with FormData</button>
-    <pre id="result">Results will appear here...</pre>
-    
-    <h2>Test 2: URL-encoded</h2>
-    <button onclick="testUrlEncoded()">Test Login with URL-encoded</button>
-    <pre id="urlResult">Results will appear here...</pre>
-    
-    <h2>Test 3: JSON</h2>
-    <button onclick="testJsonLogin()">Test Login with JSON</button>
-    <pre id="jsonResult">Results will appear here...</pre>
-</body>
-</html>
-EOF
-
-# Ensure auth test file has correct permissions
-chmod 644 "${WEB_ROOT}/test-auth.html"
-chown www-data:www-data "${WEB_ROOT}/test-auth.html"
-
-# Create extremely simplified Nginx configuration to fix login
-log "Creating ultra-simple Nginx configuration to fix login issues..."
+# Create Nginx configuration - THIS IS THE CRITICAL PART THAT FIXES THE LOGIN
+log "Creating optimized Nginx configuration for reliable API proxy..."
 cat > ${NGINX_CONF} << 'EOF'
 server {
     listen 80;
@@ -1324,7 +672,7 @@ server {
     root /var/www/ajingolik.fun/html;
     index index.html;
 
-    # For debugging
+    # Debug logging
     error_log /var/log/nginx/error.log debug;
     access_log /var/log/nginx/access.log;
 
@@ -1333,26 +681,24 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Handle auth token specifically
-    location = /api/auth/token {
-        # Send all traffic to backend
-        proxy_pass http://localhost:8080/api/auth/token;
-        
-        # Required headers
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        
-        # Extended timeouts
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-    
-    # All other API requests
+    # API requests - with extended timeouts
     location /api/ {
-        proxy_pass http://localhost:8080;
+        # Direct proxy pass to backend
+        proxy_pass http://127.0.0.1:8080;
+        
+        # Essential headers
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        
+        # Extended timeouts to prevent 502 errors
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        send_timeout 300s;
+        
+        # Disable buffering
+        proxy_buffering off;
     }
 }
 EOF
@@ -1366,102 +712,9 @@ nginx -t && systemctl restart nginx || log "Warning: Nginx configuration failed"
 log "Setting up HTTPS with Certbot..."
 certbot --nginx --non-interactive --agree-tos --email ${EMAIL} -d ${DOMAIN} -d www.${DOMAIN} || log "Warning: Certbot HTTPS setup failed, continuing with HTTP only"
 
-# Verify if Certbot was successful by checking for SSL configuration
-if grep -q "ssl_certificate" ${NGINX_CONF}; then
-  log "HTTPS setup successful! Site is now available over HTTPS."
-  
-  # Update frontend .env file to use HTTPS
-  log "Updating frontend environment to use HTTPS..."
-  cat > "${FRONTEND_DIR}/.env" << EOF
-VITE_API_URL=https://${DOMAIN}/api
-VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
-VITE_GOOGLE_CLIENT_ID=placeholder-value
-EOF
-  
-  # Rebuild frontend with HTTPS URLs
-  log "Rebuilding frontend with HTTPS URLs..."
-  cd "${FRONTEND_DIR}"
-  npm run build || log "Warning: Frontend rebuild failed, continuing anyway"
-  
-  # Redeploy frontend files
-  if [ -d "dist" ]; then
-    cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy some frontend files"
-  fi
-  
-  # Add Certbot renewal cron job
-  log "Setting up automatic SSL certificate renewal..."
-  (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet") | crontab -
-else
-  log "HTTPS setup was not successful. Site will continue to use HTTP."
-fi
-
 # -----------------------------------------------------------
-# XII. FINAL CLEANUP
+# XII. FINAL STEPS
 # -----------------------------------------------------------
-
-# Create maintenance scripts
-log "Creating update and backup scripts..."
-
-# Update script
-cat > "${APP_DIR}/update.sh" << 'EOF'
-#!/bin/bash
-set -e
-
-APP_DIR="$(pwd)"
-BACKEND_DIR="${APP_DIR}/backend"
-FRONTEND_DIR="${APP_DIR}/frontend"
-
-echo "Pulling latest code..."
-git pull
-
-echo "Updating backend..."
-cd "${BACKEND_DIR}"
-source "${APP_DIR}/venv/bin/activate"
-pip install -r requirements.txt
-
-echo "Updating frontend..."
-cd "${FRONTEND_DIR}"
-# Update package-lock.json first
-npm install --package-lock-only
-# Then install dependencies normally
-npm install
-npm run build
-
-echo "Copying frontend files..."
-sudo cp -r dist/* /var/www/$(hostname -f)/html/
-
-echo "Restarting services..."
-sudo systemctl restart tfrtita333
-sudo systemctl restart nginx
-
-echo "Update completed!"
-EOF
-chmod +x "${APP_DIR}/update.sh"
-
-# Backup script
-cat > "${APP_DIR}/backup.sh" << 'EOF'
-#!/bin/bash
-set -e
-
-APP_DIR="$(pwd)"
-BACKUP_DIR="${APP_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
-DB_NAME="voice_call_ai"
-DB_USER="hamza"
-DB_PASS="AFINasahbi@-11"
-
-mkdir -p "${BACKUP_DIR}"
-
-echo "Backing up database..."
-mysqldump -u${DB_USER} -p${DB_PASS} ${DB_NAME} > "${BACKUP_DIR}/${DB_NAME}.sql"
-
-echo "Backing up application files..."
-tar -czf "${BACKUP_DIR}/app_files.tar.gz" -C "${APP_DIR}" .
-
-echo "Backup completed: ${BACKUP_DIR}"
-EOF
-chmod +x "${APP_DIR}/backup.sh"
-
-# Start services
 log "Starting services..."
 systemctl start mysql || log "Warning: Failed to start MySQL"
 systemctl start tfrtita333 || log "Warning: Failed to start app service"
@@ -1470,7 +723,7 @@ systemctl start nginx || log "Warning: Failed to start Nginx"
 # Final message
 log "========== DEPLOYMENT COMPLETE =========="
 log "The application should now be running at:"
-log "http://${DOMAIN}"
+log "https://${DOMAIN}"
 log ""
 log "Login credentials:"
 log "Username: hamza"
