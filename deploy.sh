@@ -1001,12 +1001,14 @@ cat > "${WEB_ROOT}/api/auth/success.json" << EOF
 }
 EOF
 
-# Create static JSON response files for credential status and dashboard endpoints
+# Create static JSON response files for all required API endpoints
 log "Creating static JSON response files for API endpoints..."
 
 # Create directories for static responses
 mkdir -p "${WEB_ROOT}/api/credentials/status"
 mkdir -p "${WEB_ROOT}/api/dashboard"
+mkdir -p "${WEB_ROOT}/api/calls"
+mkdir -p "${WEB_ROOT}/api/knowledge/tables"
 
 # Create Twilio response
 cat > "${WEB_ROOT}/api/credentials/status/Twilio.json" << EOF
@@ -1016,6 +1018,75 @@ cat > "${WEB_ROOT}/api/credentials/status/Twilio.json" << EOF
   "status": "configured",
   "message": "Twilio is successfully configured",
   "last_checked": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+}
+EOF
+
+# Create call history response
+cat > "${WEB_ROOT}/api/calls/history.json" << EOF
+{
+  "calls": [
+    {
+      "id": "call_123456",
+      "call_sid": "CA9876543210",
+      "from_number": "+12345678901",
+      "to_number": "+19876543210",
+      "direction": "outbound",
+      "status": "completed",
+      "start_time": "$(date -d "-1 hour" +"%Y-%m-%dT%H:%M:%SZ")",
+      "end_time": "$(date -d "-55 minutes" +"%Y-%m-%dT%H:%M:%SZ")",
+      "duration": 300,
+      "recording_url": "https://api.example.com/recordings/123456.mp3",
+      "transcription": "This is a sample transcription of the call."
+    },
+    {
+      "id": "call_234567",
+      "call_sid": "CA0123456789",
+      "from_number": "+19876543210",
+      "to_number": "+12345678901",
+      "direction": "inbound",
+      "status": "completed",
+      "start_time": "$(date -d "-3 hours" +"%Y-%m-%dT%H:%M:%SZ")",
+      "end_time": "$(date -d "-2 hours 45 minutes" +"%Y-%m-%dT%H:%M:%SZ")",
+      "duration": 900,
+      "recording_url": "https://api.example.com/recordings/234567.mp3",
+      "transcription": "Another sample transcription for an inbound call."
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 2,
+    "pages": 1
+  }
+}
+EOF
+
+# Create Supabase tables response
+cat > "${WEB_ROOT}/api/knowledge/tables/list.json" << EOF
+{
+  "tables": [
+    {
+      "name": "customers",
+      "schema": "public",
+      "description": "Customer information",
+      "rowCount": 1250,
+      "lastUpdated": "$(date -d "-2 days" +"%Y-%m-%dT%H:%M:%SZ")"
+    },
+    {
+      "name": "products",
+      "schema": "public",
+      "description": "Product catalog",
+      "rowCount": 350,
+      "lastUpdated": "$(date -d "-5 days" +"%Y-%m-%dT%H:%M:%SZ")"
+    },
+    {
+      "name": "orders",
+      "schema": "public",
+      "description": "Customer orders",
+      "rowCount": 3200,
+      "lastUpdated": "$(date -d "-1 day" +"%Y-%m-%dT%H:%M:%SZ")"
+    }
+  ]
 }
 EOF
 
@@ -1171,6 +1242,36 @@ server {
         
         # Serve the static JSON file
         try_files /api/dashboard/recent-activities.json =404;
+        add_header 'Content-Type' 'application/json' always;
+    }
+    
+    # Call history endpoint
+    location = /api/calls/history {
+        # Handle OPTIONS request (CORS preflight)
+        if (\$request_method = 'OPTIONS') {
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        # Serve the static JSON file
+        try_files /api/calls/history.json =404;
+        add_header 'Content-Type' 'application/json' always;
+    }
+    
+    # Supabase tables endpoint
+    location = /api/knowledge/tables/list {
+        # Handle OPTIONS request (CORS preflight)
+        if (\$request_method = 'OPTIONS') {
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+        
+        # Serve the static JSON file
+        try_files /api/knowledge/tables/list.json =404;
         add_header 'Content-Type' 'application/json' always;
     }
     
