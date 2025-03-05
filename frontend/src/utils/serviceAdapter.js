@@ -30,4 +30,3 @@ export const services = {
   SupabaseTables: SupabaseTablesService
 };
 
-export default services;
