@@ -738,6 +738,32 @@ VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
 VITE_GOOGLE_CLIENT_ID=placeholder-value
 EOF
 
+# Create or update Vite config file to fix chunk size warnings
+log "Creating optimized Vite configuration..."
+cat > "${FRONTEND_DIR}/vite.config.js" << 'EOF'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 1000, // Increase warning threshold (in kB)
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Group vendor dependencies into separate chunks
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['@mui/material', '@emotion/react', '@emotion/styled'],
+          'vendor-utils': ['axios', 'dayjs', 'lodash']
+        }
+      }
+    }
+  }
+});
+EOF
+
 # Install frontend dependencies and build
 log "Installing frontend dependencies and building..."
 # First update package-lock.json to match package.json
@@ -745,6 +771,7 @@ log "Updating package-lock.json..."
 npm install --package-lock-only || log "Warning: Failed to update package-lock.json, continuing anyway" 
 # Then install dependencies normally
 npm install || log "Warning: npm install failed, continuing anyway"
+log "Building with optimized chunks..."
 npm run build || log "Warning: Frontend build failed, continuing anyway"
 
 log "Deploying frontend files..."
