@@ -814,12 +814,4 @@ log "Configuring Nginx..."
 
 # Create Nginx directories
 mkdir -p /etc/nginx/sites-available || true
-mkdir -p /etc/nginx/sites-enabled || true
-
-# Create Nginx configuration for reliable API proxy
-log "Creating optimized Nginx configuration for reliable API proxy..."
-cat > ${NGINX_CONF} << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${
+mkdir -p
