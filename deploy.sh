@@ -1312,69 +1312,47 @@ EOF
 chmod 644 "${WEB_ROOT}/test-auth.html"
 chown www-data:www-data "${WEB_ROOT}/test-auth.html"
 
-# Create ultra-simple Nginx configuration for direct backend pass-through
-log "Creating minimal Nginx configuration for reliable backend connectivity..."
-cat > ${NGINX_CONF} << EOF
+# Create extremely simplified Nginx configuration to fix login
+log "Creating ultra-simple Nginx configuration to fix login issues..."
+cat > ${NGINX_CONF} << 'EOF'
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name ${DOMAIN} www.${DOMAIN};
-    
-    # Maximum debugging
+    listen 80;
+    listen [::]:80;
+    server_name ajingolik.fun www.ajingolik.fun;
+
+    # Root directory for static files
+    root /var/www/ajingolik.fun/html;
+    index index.html;
+
+    # For debugging
     error_log /var/log/nginx/error.log debug;
     access_log /var/log/nginx/access.log;
-    
-    # Root directory for frontend files
-    root ${WEB_ROOT};
-    index index.html;
-    
-    # Simple static file serving
+
+    # Serve static files
     location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-    
-    # Direct pass-through for all API requests
-    location /api/ {
-        # All requests go directly to backend
-        proxy_pass http://127.0.0.1:8080;
-        
-        # Basic required headers
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        
-        # Simple CORS headers
-        add_header Access-Control-Allow-Origin '*';
-        add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
-        add_header Access-Control-Allow-Headers '*';
-        
-        # Very extended timeouts for debugging
-        proxy_connect_timeout 180;
-        proxy_send_timeout 180;
-        proxy_read_timeout 180;
-        send_timeout 180;
-        
-        # No caching during development
-        expires -1;
-        
-        # Handle OPTIONS requests 
-        if (\$request_method = 'OPTIONS') {
-            add_header Access-Control-Allow-Origin '*';
-            add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
-            add_header Access-Control-Allow-Headers '*';
-            add_header Content-Length 0;
-            add_header Content-Type text/plain;
-            return 204;
-        }
+        try_files $uri $uri/ /index.html;
     }
 
-    # Enable WebSocket support
-    location /ws {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
+    # Handle auth token specifically
+    location = /api/auth/token {
+        # Send all traffic to backend
+        proxy_pass http://localhost:8080/api/auth/token;
+        
+        # Required headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        
+        # Extended timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # All other API requests
+    location /api/ {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
     }
 }
 EOF
