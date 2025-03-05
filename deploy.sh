@@ -581,8 +581,257 @@ async def auth_health_check():
     return {"status": "auth_service_healthy", "timestamp": datetime.utcnow().isoformat()}
 EOF
 
-# Create main.py with proper route imports and direct auth handler
-log "Creating main.py with simplified direct auth handler..."
+# Create API route modules for Google Drive, Supabase and Calls
+log "Creating API route modules for external integrations..."
+
+# Create Google Drive API routes
+mkdir -p "${BACKEND_DIR}/app/routes" || true
+cat > "${BACKEND_DIR}/app/routes/drive.py" << 'EOF'
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import List, Optional, Dict, Any
+import logging
+import json
+import os
+
+# Configure logging
+logger = logging.getLogger("drive")
+
+router = APIRouter(prefix="/drive", tags=["google_drive"])
+
+# Placeholder for Google Drive credentials
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+# Files endpoint
+@router.get("/files")
+async def get_drive_files():
+    try:
+        logger.info("Getting Google Drive files")
+        
+        # Check if Google Drive is configured
+        if not GOOGLE_CREDENTIALS or not GOOGLE_SECRET:
+            # Return empty list with message in meta
+            return {
+                "files": [],
+                "meta": {
+                    "status": "not_configured",
+                    "message": "Google Drive API not configured. Please set up credentials."
+                }
+            }
+        
+        # This is a placeholder - in production this would use Google API client
+        # to fetch actual files
+        mock_files = [
+            {"id": "1", "name": "Document 1.docx", "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+            {"id": "2", "name": "Spreadsheet.xlsx", "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        ]
+        
+        return {
+            "files": mock_files,
+            "meta": {
+                "status": "success"
+            }
+        }
+    except Exception as e:
+        logger.exception(f"Error getting Google Drive files: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error accessing Google Drive: {str(e)}"
+        )
+EOF
+
+# Create Supabase API routes
+cat > "${BACKEND_DIR}/app/routes/supabase.py" << 'EOF'
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import List, Optional, Dict, Any
+import logging
+import json
+import os
+
+# Configure logging
+logger = logging.getLogger("supabase")
+
+router = APIRouter(prefix="/supabase", tags=["supabase"])
+
+# Placeholder for Supabase credentials
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+
+# Tables endpoint
+@router.get("/tables")
+async def get_supabase_tables():
+    try:
+        logger.info("Getting Supabase tables")
+        
+        # Check if Supabase is configured
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            # Return empty list with message in meta
+            return {
+                "tables": [],
+                "meta": {
+                    "status": "not_configured",
+                    "message": "Supabase API not configured. Please set up credentials."
+                }
+            }
+        
+        # This is a placeholder - in production this would use Supabase client
+        # to fetch actual tables
+        mock_tables = [
+            {"id": "1", "name": "customers", "row_count": 152},
+            {"id": "2", "name": "products", "row_count": 87},
+            {"id": "3", "name": "orders", "row_count": 1243},
+        ]
+        
+        return {
+            "tables": mock_tables,
+            "meta": {
+                "status": "success"
+            }
+        }
+    except Exception as e:
+        logger.exception(f"Error getting Supabase tables: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error accessing Supabase: {str(e)}"
+        )
+EOF
+
+# Create Calls API routes
+cat > "${BACKEND_DIR}/app/routes/calls.py" << 'EOF'
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from typing import List, Optional, Dict, Any
+import logging
+import json
+import os
+from datetime import datetime, timedelta
+
+# Configure logging
+logger = logging.getLogger("calls")
+
+router = APIRouter(prefix="/calls", tags=["calls"])
+
+# Placeholder for Twilio credentials
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+
+# Call history endpoint
+@router.get("/history")
+async def get_call_history(
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100)
+):
+    try:
+        logger.info(f"Getting call history - page {page}, limit {limit}")
+        
+        # Check if Twilio is configured
+        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+            # Return empty list with message in meta
+            return {
+                "calls": [],
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": 0,
+                    "pages": 0
+                },
+                "meta": {
+                    "status": "not_configured",
+                    "message": "Twilio API not configured. Please set up credentials."
+                }
+            }
+        
+        # This is a placeholder - in production this would use Twilio client
+        # to fetch actual call history
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        
+        mock_calls = [
+            {
+                "id": "CA123456789",
+                "from": "+12345678901",
+                "to": "+19876543210",
+                "status": "completed",
+                "duration": 127,
+                "start_time": yesterday.isoformat(),
+                "end_time": (yesterday + timedelta(minutes=2, seconds=7)).isoformat(),
+                "direction": "outbound"
+            },
+            {
+                "id": "CA987654321",
+                "from": "+19876543210",
+                "to": "+12345678901",
+                "status": "completed",
+                "duration": 89,
+                "start_time": today.isoformat(),
+                "end_time": (today + timedelta(minutes=1, seconds=29)).isoformat(),
+                "direction": "inbound"
+            }
+        ]
+        
+        return {
+            "calls": mock_calls,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": 2,
+                "pages": 1
+            },
+            "meta": {
+                "status": "success"
+            }
+        }
+    except Exception as e:
+        logger.exception(f"Error getting call history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error accessing call history: {str(e)}"
+        )
+
+# Make a call endpoint
+@router.post("/initiate")
+async def initiate_call(request: Request):
+    try:
+        data = await request.json()
+        to_number = data.get("to")
+        from_number = data.get("from")
+        
+        logger.info(f"Initiating call from {from_number} to {to_number}")
+        
+        # Check if Twilio is configured
+        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Twilio API not configured. Please set up credentials."
+            )
+            
+        if not to_number:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required parameter: to"
+            )
+            
+        # This is a placeholder - in production this would use Twilio client
+        # to actually initiate a call
+        call_id = "CA" + str(hash(to_number))[:10]
+        
+        return {
+            "call_id": call_id,
+            "status": "queued",
+            "message": f"Call to {to_number} has been queued",
+            "meta": {
+                "status": "success"
+            }
+        }
+    except Exception as e:
+        logger.exception(f"Error initiating call: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error initiating call: {str(e)}"
+        )
+EOF
+
+# Create main.py with all route imports
+log "Creating main.py with direct auth handler and external integrations..."
 cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
 from fastapi import FastAPI, Request, HTTPException, status, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -591,6 +840,9 @@ import logging
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from typing import Optional
+
+# Import route modules
+from app.routes import drive, supabase, calls
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -722,6 +974,11 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# Register API routes with correct prefixes
+app.include_router(drive.router, prefix="/api")
+app.include_router(supabase.router, prefix="/api")
+app.include_router(calls.router, prefix="/api")
 EOF
 
 # -----------------------------------------------------------
