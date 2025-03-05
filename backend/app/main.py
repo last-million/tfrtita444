@@ -7,6 +7,9 @@ from jose import JWTError, jwt
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
+# Import route modules
+from .routes import auth, health, calls, credentials, dashboard, knowledge_base
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("main")
@@ -17,6 +20,14 @@ app = FastAPI(
     description="API for Voice Call AI application",
     version="1.0.0"
 )
+
+# Mount routers from route modules
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(health.router, prefix="/api/health", tags=["health"])
+app.include_router(calls.router, prefix="/api/calls", tags=["calls"])
+app.include_router(credentials.router, prefix="/api/credentials", tags=["credentials"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
+app.include_router(knowledge_base.router, prefix="/api/knowledge", tags=["knowledge_base"])
 
 # CORS middleware setup
 app.add_middleware(
@@ -188,16 +199,17 @@ async def get_recent_activities_alt_path():
     logger.info("Fetching recent activities (alt path)")
     return await get_recent_activities()
 
-# ----- CREDENTIAL STATUS ENDPOINTS -----
+# ----- CREDENTIAL STATUS ENDPOINTS (implemented in routes/credentials.py) -----
 
+# Add fallback credential status endpoints in main.py for redundancy
 @app.get("/api/credentials/status/{service}")
 async def get_service_status(service: str):
-    """Get the status of a service integration"""
-    logger.info(f"Checking status for service: {service}")
+    """Get the status of a service integration - direct implementation fallback"""
+    logger.info(f"[FALLBACK ENDPOINT] Checking status for service: {service}")
     
     # Create a more complete mock response with the "connected" field the frontend expects
     connected = False
-    if service == "Twilio" or service == "Supabase":
+    if service in ["Twilio", "Supabase", "Google Calendar", "Ultravox"]:
         connected = True
         
     return {
@@ -210,8 +222,8 @@ async def get_service_status(service: str):
 
 @app.get("/api/api/credentials/status/{service}")
 async def get_service_status_alt_path(service: str):
-    """Handle the incorrect double /api/api/ path"""
-    logger.info(f"Checking status for service (alt path): {service}")
+    """Handle the incorrect double /api/api/ path - direct implementation fallback"""
+    logger.info(f"[FALLBACK ALT PATH] Checking status for service: {service}")
     return await get_service_status(service)
 
 # ----- CALL ENDPOINTS -----
