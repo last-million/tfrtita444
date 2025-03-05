@@ -818,8 +818,8 @@ mkdir -p /etc/nginx/sites-enabled || true
 
 # Create Nginx configuration - THIS IS THE CRITICAL PART THAT FIXES THE LOGIN
 log "Creating optimized Nginx configuration for reliable API proxy..."
-cat > ${NGINX_CONF} << 'EOF'
+cat > ${NGINX_CONF} << EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name ajingo
+    server_name ${DOMAIN} www.
