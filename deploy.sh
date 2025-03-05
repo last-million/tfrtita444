@@ -776,8 +776,8 @@ VITE_WEBSOCKET_URL=ws://${DOMAIN}/ws
 VITE_GOOGLE_CLIENT_ID=placeholder-value
 EOF
 
-# Create Vite configuration file to optimize build chunks
-log "Creating optimized Vite configuration for frontend..."
+# Create Vite configuration file with simple settings
+log "Creating simple Vite configuration for frontend..."
 cat > "${FRONTEND_DIR}/vite.config.js" << 'EOF'
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -786,20 +786,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Increase warning threshold for chunk sizes
-    chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['react-icons', 'styled-components']
-        }
-      }
-    }
+    chunkSizeWarningLimit: 1000
   },
   server: {
     port: 5173,
-    strictPort: false,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
