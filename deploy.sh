@@ -951,25 +951,29 @@ ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 # Restart Nginx with the fixed configuration
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-# Fix the FastAPI main.py to handle both root and api-prefixed routes
-log "Creating a simplified main.py that works with Nginx routing..."
+# Creating a minimal API server focused only on handling the login correctly
+log "Creating a super-minimal main.py focused only on login..."
 cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
-from fastapi import FastAPI, Request, HTTPException, status, Depends
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 from datetime import datetime, timedelta
 from jose import jwt
-from typing import Optional, Dict, Any
+import traceback
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("api")
 
 # Create FastAPI app
 app = FastAPI()
 
-# Allow CORS from any origin to ensure frontend can access the API
+# Allow all origins for CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -978,138 +982,91 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT configuration for tokens
+# JWT settings
 SECRET_KEY = "strong-secret-key-for-jwt-tokens"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # Longer token expiry for testing
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT token with expiration"""
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+# Create JWT token
+def create_token(username):
+    expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"sub": username, "exp": expires}
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
 
-# Root health check
+# Root endpoint
 @app.get("/")
-async def read_root():
-    logger.info("Root endpoint accessed")
-    return {"status": "ok", "message": "API is running"}
+def read_root():
+    logger.info("Root endpoint called")
+    return {"status": "ok"}
 
-# Health check endpoint
-@app.get("/health")
-@app.get("/api/health")
-async def health_check():
-    logger.info("Health check endpoint accessed")
-    return {"status": "healthy", "timestamp": str(datetime.utcnow())}
-
-# Login endpoint - the most important one to fix
+# Login endpoint
 @app.post("/auth/token")
-@app.post("/api/auth/token")
 async def login(request: Request):
-    """Login endpoint that accepts both /auth/token and /api/auth/token paths"""
+    logger.info("Login endpoint called")
     try:
-        logger.info(f"Login attempt with content-type: {request.headers.get('content-type', '')}")
+        # Get request body as JSON
+        try:
+            body = await request.json()
+            logger.info(f"Received JSON data: {body}")
+        except Exception as e:
+            logger.error(f"Failed to parse JSON: {str(e)}")
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": "Invalid JSON data"}
+            )
         
-        # Default credentials to compare against
-        VALID_USERNAME = "hamza"
-        VALID_PASSWORD = "AFINasahbi@-11"
+        # Extract username and password
+        username = body.get("username")
+        password = body.get("password")
         
-        # Try to parse request body in various formats
-        username = None
-        password = None
+        # Log attempt (but not password)
+        logger.info(f"Login attempt for user: {username}")
         
-        content_type = request.headers.get("content-type", "").lower()
-        
-        if "application/json" in content_type:
-            # Parse as JSON
-            try:
-                body = await request.json()
-                username = body.get("username")
-                password = body.get("password")
-                logger.info(f"Parsed JSON request, username: {username}")
-            except Exception as e:
-                logger.error(f"Failed to parse JSON: {str(e)}")
-                
-        elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-            # Parse as form data
-            try:
-                form = await request.form()
-                username = form.get("username")
-                password = form.get("password")
-                logger.info(f"Parsed form data, username: {username}")
-            except Exception as e:
-                logger.error(f"Failed to parse form: {str(e)}")
-                
-        else:
-            # Try to parse raw body
-            try:
-                body = await request.body()
-                text = body.decode()
-                logger.debug(f"Raw request body: {text}")
-                
-                # Try to extract username/password from various formats
-                if '&' in text:  # URL-encoded format
-                    pairs = text.split('&')
-                    data = {}
-                    for pair in pairs:
-                        if '=' in pair:
-                            k, v = pair.split('=', 1)
-                            data[k] = v
-                    username = data.get('username')
-                    password = data.get('password')
-                    logger.info(f"Parsed raw body as url-encoded, username: {username}")
-            except Exception as e:
-                logger.error(f"Failed to parse raw body: {str(e)}")
-        
-        # Log the parsed credentials (excluding password)
-        logger.info(f"Login attempt for username: {username}")
-        
-        # Check credentials - important: both must be provided and match expected values
+        # Check credentials
         if not username or not password:
-            logger.error("Missing username or password")
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"detail": "Username and password required"}
             )
-            
-        if username != VALID_USERNAME or password != VALID_PASSWORD:
+        
+        # Hardcoded check - just for testing
+        if username == "hamza" and password == "AFINasahbi@-11":
+            # Generate token
+            token = create_token(username)
+            logger.info(f"Login successful for user: {username}")
+            return {
+                "access_token": token,
+                "token_type": "bearer",
+                "username": username
+            }
+        else:
             logger.warning(f"Invalid credentials for user: {username}")
             return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED, 
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"detail": "Incorrect username or password"}
             )
-        
-        # Generate JWT token
-        access_token = create_access_token(
-            data={"sub": username},
-            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        )
-        
-        # Return successful login response
-        logger.info(f"Successful login for user: {username}")
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "username": username
-        }
-        
     except Exception as e:
-        # Log any unexpected errors
-        logger.exception(f"Login error: {str(e)}")
+        logger.error(f"Login error: {str(e)}")
+        logger.error(traceback.format_exc())
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": f"Internal server error: {str(e)}"}
+            content={"detail": f"Server error: {str(e)}"}
         )
+
+# API version of login endpoint with same implementation
+@app.post("/api/auth/token")
+async def api_login(request: Request):
+    result = await login(request)
+    return result
 EOF
 
 # Restart the backend service to apply the simplified API
-log "Restarting the backend service with simplified API..."
+log "Restarting the backend service with minimal API..."
 systemctl restart tfrtita333.service
 
-# Fix the Nginx configuration to properly route API requests
-log "Updating Nginx configuration to properly route API requests..."
+# Update Nginx configuration with focus on proper API routing
+log "Updating Nginx configuration with direct path routing..."
 cat > "${NGINX_CONF}" << EOF
 server {
     listen 80;
@@ -1119,21 +1076,33 @@ server {
     root ${WEB_ROOT};
     index index.html;
 
-    # Handle API requests by removing the /api prefix
-    location /api/ {
-        # Important: Do NOT include /api/ in the proxy_pass URL
-        proxy_pass http://127.0.0.1:8000/;
+    # Direct path to login endpoint - most critical
+    location = /api/auth/token {
+        proxy_pass http://127.0.0.1:8000/api/auth/token;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
     }
 
-    # Handle all other requests as static files or route to index.html
+    # General API requests
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    # Static files and SPA routing
     location / {
         try_files \$uri \$uri/ /index.html;
     }
