@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, status, Body
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
@@ -29,14 +30,38 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["credent
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge", tags=["knowledge_base"])
 
-# CORS middleware setup
+# CORS middleware setup with improved error handling
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+# Add error logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and responses for debugging"""
+    request_id = f"{datetime.utcnow().timestamp()}-{hash(request)}"
+    client_host = request.client.host if request.client else "unknown"
+    
+    logger.info(f"[{request_id}] Request: {request.method} {request.url.path} from {client_host}")
+    
+    try:
+        # Process the request
+        response = await call_next(request)
+        logger.info(f"[{request_id}] Response: {response.status_code}")
+        return response
+    except Exception as e:
+        # Log any unhandled exceptions
+        logger.error(f"[{request_id}] Unhandled error: {str(e)}")
+        
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Internal server error: {str(e)}"}
+        )
 
 # JWT configuration
 SECRET_KEY = "strong-secret-key-for-jwt-tokens"
@@ -207,18 +232,40 @@ async def get_service_status(service: str):
     """Get the status of a service integration - direct implementation fallback"""
     logger.info(f"[FALLBACK ENDPOINT] Checking status for service: {service}")
     
-    # Create a more complete mock response with the "connected" field the frontend expects
-    connected = False
-    if service in ["Twilio", "Supabase", "Google Calendar", "Ultravox"]:
-        connected = True
+    try:
+        # This is a hardcoded list for dev/test environments
+        services_connected = {
+            "Twilio": True,
+            "Supabase": True,
+            "Google Calendar": True,
+            "Ultravox": True,
+            "SERP API": True,
+            "Airtable": True,
+            "Gmail": True,
+            "Google Drive": True
+        }
         
-    return {
-        "service": service,
-        "connected": connected,
-        "status": "configured" if connected else "not_configured",
-        "message": f"{service} is {'successfully configured' if connected else 'not configured'}",
-        "last_checked": datetime.utcnow().isoformat()
-    }
+        is_connected = services_connected.get(service, False)
+        
+        # Return the status with more complete info the frontend expects
+        return {
+            "service": service,
+            "connected": is_connected,
+            "status": "configured" if is_connected else "not_configured",
+            "message": f"{service} is {'successfully configured' if is_connected else 'not configured'}",
+            "last_checked": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in fallback service status for {service}: {str(e)}")
+        # Return a 200 with connected=false rather than an error
+        return {
+            "service": service,
+            "connected": False,
+            "status": "error",
+            "message": f"Error checking {service} connection",
+            "error": str(e),
+            "last_checked": datetime.utcnow().isoformat()
+        }
 
 @app.get("/api/api/credentials/status/{service}")
 async def get_service_status_alt_path(service: str):
