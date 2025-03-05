@@ -1000,7 +1000,6 @@ log "Creating optimized Vite configuration..."
 cat > "${FRONTEND_DIR}/vite.config.js" << 'EOF'
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -1009,11 +1008,18 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000, // Increase warning threshold (in kB)
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Group vendor dependencies into separate chunks
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui': ['@mui/material', '@emotion/react', '@emotion/styled'],
-          'vendor-utils': ['axios', 'dayjs', 'lodash']
+        manualChunks: (id) => {
+          // Simple and safe chunking strategy that works with any dependencies
+          if (id.includes('node_modules')) {
+            // Extract vendor name from the path
+            const vendorName = id.toString().split('node_modules/')[1].split('/')[0].toString();
+            // Group react and react-dom together
+            if (vendorName.includes('react')) {
+              return 'vendor-react';
+            }
+            // Other vendors get their own chunks
+            return `vendor-${vendorName}`;
+          }
         }
       }
     }
