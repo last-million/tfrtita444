@@ -906,9 +906,14 @@ log "Restarting Nginx..."
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
 # -----------------------------------------------------------
-# XIII. SET UP HTTPS WITH CERTBOT
+# XIII. SET UP HTTPS WITH CERTBOT OR SELF-SIGNED FALLBACK
 # -----------------------------------------------------------
-log "Setting up HTTPS with Certbot..."
+log "Setting up HTTPS..."
+
+# Path to generate self-signed certificates
+SSL_DIR="/etc/ssl/private/${DOMAIN}"
+CERT_PATH="${SSL_DIR}/cert.pem"
+KEY_PATH="${SSL_DIR}/privkey.pem"
 
 # Don't automatically set up HTTPS yet, fix the HTTP version first
 log "Fixing Nginx configuration to ensure proper API routing..."
@@ -957,8 +962,31 @@ systemctl stop nginx
 
 # Get SSL certificate with Certbot standalone (more reliable)
 log "Obtaining SSL certificate with Certbot standalone..."
-certbot certonly --standalone --non-interactive --agree-tos --email "${EMAIL}" \
-  --domains "${DOMAIN},www.${DOMAIN}" || log "Warning: SSL certificate request failed"
+if certbot certonly --standalone --non-interactive --agree-tos --email "${EMAIL}" \
+  --domains "${DOMAIN},www.${DOMAIN}"; then
+  log "Successfully obtained Let's Encrypt certificate!"
+  # Use Let's Encrypt certificates
+  SSL_CERT_PATH="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+  SSL_KEY_PATH="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+else
+  log "Let's Encrypt certificate request failed - using self-signed certificate instead"
+  # Create directory for self-signed certificates
+  mkdir -p "$SSL_DIR"
+  
+  # Generate self-signed certificate valid for 365 days
+  log "Generating self-signed SSL certificate..."
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout "$KEY_PATH" -out "$CERT_PATH" \
+    -subj "/CN=${DOMAIN}/O=TempCert/C=US" \
+    -addext "subjectAltName = DNS:${DOMAIN},DNS:www.${DOMAIN}"
+  
+  chmod 600 "$KEY_PATH"
+  
+  # Use self-signed certificates
+  SSL_CERT_PATH="$CERT_PATH"
+  SSL_KEY_PATH="$KEY_PATH"
+  log "Using self-signed certificates (temporary solution until Let's Encrypt is available)"
+fi
 
 # Create a simple login JSON file 
 log "Creating static login response file..."
@@ -991,8 +1019,8 @@ server {
     server_name ${DOMAIN} www.${DOMAIN};
     
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_certificate ${SSL_CERT_PATH};
+    ssl_certificate_key ${SSL_KEY_PATH};
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
     ssl_ciphers ECDH+AESGCM:ECDH+AES256:ECDH+AES128:DH+3DES:!ADH:!AECDH:!MD5;
