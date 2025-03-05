@@ -3,6 +3,24 @@ set -e
 
 # Check if script is running with sudo privileges
 if [ "$EUID" -ne 0 ]; then
+  echo "This script must be run with sudo. Please run: sudo ./complete_deploy.sh"
+  exit 1
+fi
+
+# Get the path to the original deploy.sh
+DEPLOY_PATH="$(pwd)/deploy.sh"
+
+# Make a backup of the original deploy.sh
+cp "${DEPLOY_PATH}" "${DEPLOY_PATH}.bak"
+echo "Created backup of deploy.sh at ${DEPLOY_PATH}.bak"
+
+# Update the deploy.sh file with the fixed content
+cat > "${DEPLOY_PATH}" << 'EOF'
+#!/bin/bash
+set -e
+
+# Check if script is running with sudo privileges
+if [ "$EUID" -ne 0 ]; then
   echo "This script must be run with sudo. Please run: sudo ./deploy.sh"
   exit 1
 fi
@@ -784,24 +802,4 @@ import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  build: {
-    // Increase warning threshold to 800kb
-    chunkSizeWarningLimit: 800,
-    rollupOptions: {
-      output: {
-        // Configure manual chunks to better organize dependencies
-        manualChunks: (id) => {
-          // Split node_modules into separate chunks
-          if (id.includes('node_modules')) {
-            // Group React-related modules together
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-              return 'vendor-react';
-            }
-            
-            // Group chart.js related dependencies
-            if (id.includes('chart.js') || id.includes('react-chartjs')) {
-              return 'vendor-charts';
-            }
-            
-            // Group FontAwesome
+  plugins: [
