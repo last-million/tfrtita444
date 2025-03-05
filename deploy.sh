@@ -3,24 +3,6 @@ set -e
 
 # Check if script is running with sudo privileges
 if [ "$EUID" -ne 0 ]; then
-  echo "This script must be run with sudo. Please run: sudo ./complete_deploy.sh"
-  exit 1
-fi
-
-# Get the path to the original deploy.sh
-DEPLOY_PATH="$(pwd)/deploy.sh"
-
-# Make a backup of the original deploy.sh
-cp "${DEPLOY_PATH}" "${DEPLOY_PATH}.bak"
-echo "Created backup of deploy.sh at ${DEPLOY_PATH}.bak"
-
-# Update the deploy.sh file with the fixed content
-cat > "${DEPLOY_PATH}" << 'EOF'
-#!/bin/bash
-set -e
-
-# Check if script is running with sudo privileges
-if [ "$EUID" -ne 0 ]; then
   echo "This script must be run with sudo. Please run: sudo ./deploy.sh"
   exit 1
 fi
@@ -802,4 +784,143 @@ import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
+  plugins: [react()],
+  build: {
+    // Increase warning threshold for chunk sizes
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['react-icons', 'styled-components']
+        }
+      }
+    }
+  },
+  server: {
+    port: 5173,
+    strictPort: false,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  }
+});
+EOF
+
+# Install frontend dependencies
+log "Installing frontend dependencies..."
+npm install || log "Warning: Frontend dependency installation failed"
+
+# Build frontend
+log "Building frontend for production..."
+npm run build || log "Warning: Frontend build failed"
+
+# -----------------------------------------------------------
+# X. BUILD AND DEPLOY FRONTEND
+# -----------------------------------------------------------
+log "Building frontend..."
+
+# Create web root directory
+log "Creating web root directory..."
+mkdir -p "${WEB_ROOT}"
+
+# Copy frontend build to web root
+log "Copying frontend build to web root..."
+cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy frontend build"
+
+# -----------------------------------------------------------
+# XI. SETUP BACKEND SERVICE
+# -----------------------------------------------------------
+log "Creating systemd service for backend..."
+
+# Create systemd service file
+cat > "${SERVICE_FILE}" << EOF
+[Unit]
+Description=FastAPI backend for ${DOMAIN}
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=${BACKEND_DIR}
+Environment="PATH=${APP_DIR}/venv/bin"
+ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Set permissions
+chmod 644 "${SERVICE_FILE}"
+
+# Reload systemd, enable and start service
+log "Starting backend service..."
+systemctl daemon-reload
+systemctl enable tfrtita333.service
+systemctl start tfrtita333.service || log "Warning: Failed to start backend service"
+
+# -----------------------------------------------------------
+# XII. CONFIGURE NGINX
+# -----------------------------------------------------------
+log "Configuring Nginx..."
+
+# Create Nginx server block configuration
+cat > "${NGINX_CONF}" << EOF
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    
+    # Root directory for static files
+    root ${WEB_ROOT};
+    index index.html;
+
+    # Handle API requests - proxy to backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+
+    # Handle all other requests - SPA frontend
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
+
+# Create symbolic link to enable the site
+ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
+
+# Test Nginx configuration
+nginx -t || log "Warning: Nginx configuration test failed"
+
+# Restart Nginx
+log "Restarting Nginx..."
+systemctl restart nginx || log "Warning: Failed to restart Nginx"
+
+log "Deployment complete! Your application should now be running at http://${DOMAIN}"
+log "Login with username: hamza and password: AFINasahbi@-11"
+
+# -----------------------------------------------------------
+# ENSURE PROPER FILE PERMISSIONS
+# -----------------------------------------------------------
+log "Setting file permissions..."
+find "${APP_DIR}" -type d -exec chmod 755 {} \;
+find "${APP_DIR}" -type f -exec chmod 644 {} \;
+chmod +x "${APP_DIR}/deploy.sh"
+chown -R www-data:www-data "${WEB_ROOT}"
+chmod +x "${BACKEND_DIR}/app" || true
