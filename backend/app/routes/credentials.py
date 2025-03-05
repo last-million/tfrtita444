@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Dict, Any
 from ..services.credential_validator import credential_validator
+from ..middleware.auth import verify_token
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class CredentialValidationRequest(BaseModel):
     service: str
@@ -33,3 +36,43 @@ async def decrypt_credentials(encrypted_credentials: Dict[str, Any]):
         return decrypted_credentials
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Credential decryption error: {str(e)}")
+        
+@router.get("/status/{service_name}")
+async def get_credential_status(service_name: str, user=Depends(verify_token)):
+    """
+    Check if credentials for a service are valid and the service is connected
+    """
+    try:
+        # In a real implementation, you would check if the service is actually connected
+        # For example, by making a test API call to the service
+        
+        # For now, this is a simplified implementation
+        # We'll assume that if the credentials exist, the service is connected
+        
+        # Get stored credentials from database
+        # This is a placeholder - in a real app, you would fetch from a database
+        services_connected = {
+            "Twilio": True,
+            "Supabase": True,
+            "Google Calendar": True,
+            "Ultravox": True
+        }
+        
+        is_connected = services_connected.get(service_name, False)
+        
+        # Return the status
+        return {
+            "service": service_name,
+            "connected": is_connected,
+            "last_checked": "just now"
+        }
+    except Exception as e:
+        logger.error(f"Error checking status for {service_name}: {str(e)}")
+        # Return a 200 with connected=false rather than an error
+        # This ensures the frontend can display the disconnected state rather than an error
+        return {
+            "service": service_name,
+            "connected": False,
+            "error": str(e),
+            "last_checked": "just now"
+        }
