@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Dashboard.css'
-import { api } from '../services/api';
 import axios from 'axios';
 
 // Import new components
@@ -9,6 +8,9 @@ import CallAnalyticsChart from '../components/CallAnalyticsChart';
 import SystemHealthIndicators from '../components/SystemHealthIndicators';
 import NotificationsPanel from '../components/NotificationsPanel';
 import QuickActionCards from '../components/QuickActionCards';
+
+// Hardcoded API URL as fallback
+const API_BASE_URL = 'http://localhost:8081/api';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -53,24 +55,25 @@ function Dashboard() {
   const [recentActivities, setRecentActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Helper for making authenticated API requests
+  const makeRequest = async (url) => {
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      const response = await axios.get(`${API_BASE_URL}${url}`, { headers });
+      return response.data;
+    } catch (error) {
+      console.error(`Error making request to ${url}:`, error);
+      throw error;
+    }
+  };
+
   // Fetch dashboard stats from the backend API
   const fetchDashboardStats = async () => {
     try {
-      // Use native fetch instead of axios to avoid any bundling issues
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${api.defaults.baseURL}/dashboard/stats`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      } else {
-        throw new Error(`API error: ${response.status}`);
-      }
+      const data = await makeRequest('/dashboard/stats');
+      setStats(data);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       // Set default values if API fails
@@ -86,21 +89,8 @@ function Dashboard() {
   // Fetch recent activities from the backend
   const fetchRecentActivities = async () => {
     try {
-      // Use native fetch instead of axios to avoid any bundling issues
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${api.defaults.baseURL}/dashboard/recent-activities`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setRecentActivities(data);
-      } else {
-        throw new Error(`API error: ${response.status}`);
-      }
+      const data = await makeRequest('/dashboard/recent-activities');
+      setRecentActivities(data);
     } catch (error) {
       console.error("Error fetching recent activities:", error);
       // Set empty array if API fails
@@ -112,25 +102,12 @@ function Dashboard() {
   const fetchServiceStatus = async () => {
     try {
       const updatedServices = [...services];
-      const token = localStorage.getItem('token');
       
-      // Sequential fetch for each service to avoid bundling issues
+      // Sequential fetch for each service 
       for (let i = 0; i < updatedServices.length; i++) {
         try {
-          // Use native fetch instead of axios to avoid any bundling issues
-          const response = await fetch(`${api.defaults.baseURL}/credentials/status/${updatedServices[i].name}`, {
-            headers: {
-              'Authorization': token ? `Bearer ${token}` : '',
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            updatedServices[i].connected = data.connected || false;
-          } else {
-            updatedServices[i].connected = false;
-          }
+          const data = await makeRequest(`/credentials/status/${updatedServices[i].name}`);
+          updatedServices[i].connected = data?.connected || false;
         } catch (err) {
           console.error(`Error getting status for ${updatedServices[i].name}:`, err);
           updatedServices[i].connected = false;
@@ -198,7 +175,7 @@ function Dashboard() {
   const refreshDashboard = async () => {
     setIsLoading(true);
     
-    // Execute sequentially to avoid any potential Promise.all issues
+    // Execute sequentially
     await fetchDashboardStats();
     await fetchRecentActivities();
     await fetchServiceStatus();
