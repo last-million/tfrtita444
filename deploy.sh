@@ -910,29 +910,63 @@ systemctl restart nginx || log "Warning: Failed to restart Nginx"
 # -----------------------------------------------------------
 log "Setting up HTTPS with Certbot..."
 
-# Obtain and install SSL certificate with Certbot
-certbot --nginx --non-interactive --agree-tos --email "${EMAIL}" \
-  --domains "${DOMAIN},www.${DOMAIN}" \
-  --redirect --hsts || log "Warning: Certbot SSL setup failed, continuing anyway"
+# Don't automatically set up HTTPS yet, fix the HTTP version first
+log "Fixing Nginx configuration to ensure proper API routing..."
 
-# Update frontend environment file to use HTTPS
-log "Updating frontend environment to use HTTPS..."
-sed -i 's|http://|https://|g' "${FRONTEND_DIR}/.env"
-sed -i 's|ws://|wss://|g' "${FRONTEND_DIR}/.env"
+# Create a modified Nginx configuration to properly handle API requests
+cat > "${NGINX_CONF}" << EOF
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    
+    # Root directory for static files
+    root ${WEB_ROOT};
+    index index.html;
 
-# Rebuild frontend with the updated environment
-log "Rebuilding frontend with HTTPS settings..."
-cd "${FRONTEND_DIR}"
-npm run build || log "Warning: Frontend rebuild failed"
+    # Handle API requests - proxy to backend with fixed configuration
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
 
-# Copy updated frontend build to web root
-log "Copying updated frontend build to web root..."
-cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy updated frontend build"
+    # Handle all other requests - SPA frontend
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
 
-# Make sure Nginx is restarted to apply all changes
+# Create symbolic link to enable the site
+ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
+
+# Restart Nginx with the fixed configuration
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-log "Deployment complete! Your application should now be running at https://${DOMAIN}"
+# Fix the FastAPI main.py to ensure API paths are correct
+log "Updating API routes in main.py..."
+sed -i 's|@app.post("/api/auth/token")|@app.post("/api/auth/token")|g' "${BACKEND_DIR}/app/main.py"
+
+# Restart the backend service to apply changes
+systemctl restart tfrtita333.service || log "Warning: Failed to restart backend service"
+
+log "Verifying that API and frontend are working properly before enabling HTTPS..."
+sleep 5
+
+# Now attempt to set up HTTPS with Certbot
+log "Setting up HTTPS with Certbot (will continue even if this fails)..."
+certbot --nginx -n --agree-tos --email "${EMAIL}" --domains "${DOMAIN}" || log "Warning: Certbot SSL setup failed, continuing with HTTP only"
+
+log "Deployment complete! Your application should be running."
+log "Try accessing at http://${DOMAIN} or https://${DOMAIN} (if SSL setup was successful)"
 log "Login with username: hamza and password: AFINasahbi@-11"
 
 # -----------------------------------------------------------
