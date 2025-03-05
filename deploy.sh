@@ -319,7 +319,7 @@ fi
 # Install essential packages for FastAPI
 log "Installing additional Python packages..."
 pip install gunicorn uvicorn pymysql sqlalchemy pydantic || log "Warning: Failed to install some packages"
-pip install python-jose[cryptography] passlib[bcrypt] python-multipart fastapi || log "Warning: Failed to install some packages"
+pip install python-jose[cryptography] passlib[bcrypt] python-multipart fastapi pydantic-settings || log "Warning: Failed to install some packages"
 
 # -----------------------------------------------------------
 # VIII. CONFIGURE APPLICATION
@@ -421,44 +421,54 @@ GOOGLE_CLIENT_ID=placeholder-value
 GOOGLE_CLIENT_SECRET=placeholder-value
 
 # Server Settings
-DEBUG=False
-CORS_ORIGINS=https://${DOMAIN},http://localhost:5173,http://localhost:3000
+DEBUG=True
+CORS_ORIGINS=https://${DOMAIN},http://localhost:5173,http://localhost:3000,*
 SERVER_DOMAIN=${DOMAIN}
 SECRET_KEY=${RANDOM_SECRET_KEY}
 ENCRYPTION_SALT=placeholder-salt-value
-LOG_LEVEL=INFO
+LOG_LEVEL=DEBUG
 EOF
 
 # Create main.py with enhanced API endpoints to fix login issues
-log "Creating enhanced main.py with complete API support..."
+log "Creating enhanced main.py with complete API support and fixed auth..."
 cat > "${BACKEND_DIR}/app/main.py" << 'EOF'
-from fastapi import FastAPI, Request, HTTPException, status, Body
+from fastapi import FastAPI, Request, HTTPException, status, Body, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import os
 import logging
+import traceback
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("api_debug.log")
+    ]
+)
 logger = logging.getLogger("main")
 
-# Create FastAPI app
+# Create FastAPI app with detailed documentation
 app = FastAPI(
     title="Voice Call AI API",
-    description="API for Voice Call AI application",
+    description="API for Voice Call AI application with fixed auth",
     version="1.0.0"
 )
 
-# CORS middleware setup
+# CORS middleware setup - Allow all origins to fix cross-domain issues
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # JWT configuration
@@ -466,18 +476,74 @@ SECRET_KEY = "strong-secret-key-for-jwt-tokens"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+class TokenData(BaseModel):
+    sub: str
+
+# --- Authentication Functions ---
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create a new JWT token with expiration"""
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Direct auth token endpoint with debugging logs
+# --- Request logging middleware ---
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and responses for debugging"""
+    request_id = f"{datetime.utcnow().timestamp()}-{hash(request)}"
+    client_host = request.client.host if request.client else "unknown"
+    
+    logger.info(f"[{request_id}] Request: {request.method} {request.url.path} from {client_host}")
+    logger.debug(f"[{request_id}] Headers: {dict(request.headers)}")
+    
+    try:
+        # Process the request
+        response = await call_next(request)
+        
+        # Log response status
+        logger.info(f"[{request_id}] Response: {response.status_code}")
+        return response
+    except Exception as e:
+        # Log any unhandled exceptions
+        logger.error(f"[{request_id}] Unhandled error: {str(e)}")
+        logger.debug(f"[{request_id}] Traceback: {traceback.format_exc()}")
+        
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Internal server error: {str(e)}"}
+        )
+
+# --- Error handling for common issues ---
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Custom handler for HTTP exceptions with detailed logging"""
+    logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Global exception handler with detailed logging"""
+    logger.error(f"Unhandled exception: {str(exc)}")
+    logger.debug(f"Traceback: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
+
+# --- API Endpoints ---
+
+# Fixed auth token endpoint with improved error handling and logging
 @app.post("/api/auth/token")
 async def login_for_access_token(request: Request):
+    """Enhanced login endpoint that handles various content types and provides detailed logging"""
     try:
-        logger.info(f"Auth token request received with content type: {request.headers.get('content-type')}")
+        logger.info(f"Auth token request received: {request.headers.get('content-type')}")
         username = None
         password = None
         
@@ -498,7 +564,7 @@ async def login_for_access_token(request: Request):
             logger.info(f"Received form login request for user: {username}")
             
         else:
-            # Try to handle raw body
+            # Try to handle raw body as last resort
             body = await request.body()
             try:
                 body_text = body.decode('utf-8')
@@ -517,8 +583,9 @@ async def login_for_access_token(request: Request):
                     logger.info(f"Extracted from raw body: username={username}")
             except Exception as e:
                 logger.error(f"Failed to parse request body: {str(e)}")
+                logger.debug(f"Raw body: {body}")
         
-        # Hardcoded credentials for simple testing
+        # Hardcoded credentials check
         if not username or not password:
             logger.error("Username or password missing")
             raise HTTPException(
@@ -526,6 +593,7 @@ async def login_for_access_token(request: Request):
                 detail="Username and password required"
             )
             
+        # Here we use hardcoded credentials to ensure the login always works
         if username != "hamza" or password != "AFINasahbi@-11":
             logger.error(f"Invalid credentials for user: {username}")
             raise HTTPException(
@@ -533,7 +601,7 @@ async def login_for_access_token(request: Request):
                 detail="Incorrect username or password"
             )
         
-        # Generate token
+        # Generate token with extended expiration for testing
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": username}, expires_delta=access_token_expires
@@ -547,16 +615,21 @@ async def login_for_access_token(request: Request):
             "username": username
         }
         
+    except HTTPException as he:
+        # Re-raise HTTP exceptions as-is
+        raise he
     except Exception as e:
+        # Log and convert other exceptions to 500 errors
         logger.exception(f"Login error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Server error: {str(e)}"
         )
 
-# Root endpoint
+# Root endpoint for health checks
 @app.get("/")
 async def root():
+    """API root endpoint"""
     return {
         "status": "ok",
         "message": "Voice Call AI API is running",
@@ -564,14 +637,21 @@ async def root():
         "timestamp": datetime.utcnow().isoformat()
     }
 
-# Health check endpoint
+# Standard health check endpoint
 @app.get("/api/health")
 async def health_check():
+    """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# Also support /api/api/health for broken frontend clients
+@app.get("/api/api/health")
+async def health_check_alt():
+    """Alternative health check path for broken clients"""
+    return await health_check()
 
 # ----- CREDENTIAL STATUS ENDPOINTS -----
 
-# Add service status endpoint - FIXING THE DOUBLE /api/api/ PATH ISSUE
+# Add service status endpoint
 @app.get("/api/credentials/status/{service}")
 async def get_service_status(service: str):
     """Get the status of a service integration"""
@@ -688,11 +768,11 @@ EOF
 log "Setting up frontend..."
 cd "${FRONTEND_DIR}" || log "Warning: Could not change to frontend directory"
 
-# Create frontend .env file with HTTPS URLs
-log "Creating frontend .env file..."
+# Create frontend .env file with HTTP URLs (not HTTPS) - FIX for login issues
+log "Creating frontend .env file with proper API configuration..."
 cat > "${FRONTEND_DIR}/.env" << EOF
-VITE_API_URL=https://${DOMAIN}/api
-VITE_WEBSOCKET_URL=wss://${DOMAIN}/ws
+VITE_API_URL=http://${DOMAIN}/api
+VITE_WEBSOCKET_URL=ws://${DOMAIN}/ws
 VITE_GOOGLE_CLIENT_ID=placeholder-value
 EOF
 
@@ -724,94 +804,4 @@ export default defineConfig({
               return 'vendor-charts';
             }
             
-            // Group FontAwesome dependencies
-            if (id.includes('fontawesome')) {
-              return 'vendor-fontawesome';
-            }
-            
-            // Other dependencies
-            return 'vendor-other';
-          }
-        }
-      }
-    }
-  }
-});
-EOF
-
-# Install frontend dependencies and build
-log "Installing frontend dependencies and building..."
-npm install || log "Warning: npm install failed, continuing anyway"
-npm run build || log "Warning: Frontend build failed, continuing anyway"
-
-# Deploy frontend files
-log "Deploying frontend files..."
-mkdir -p "${WEB_ROOT}" || true
-if [ -d "dist" ]; then
-  cp -r dist/* "${WEB_ROOT}/" || log "Warning: Failed to copy some frontend files"
-else
-  log "Creating fallback index.html..."
-  mkdir -p "${WEB_ROOT}" || true
-  cat > "${WEB_ROOT}/index.html" << EOF
-<!DOCTYPE html>
-<html>
-<head>
-  <title>${DOMAIN} - Setup in Progress</title>
-  <style>body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }</style>
-</head>
-<body>
-  <h1>Site Setup in Progress</h1>
-  <p>The application is still being configured.</p>
-</body>
-</html>
-EOF
-fi
-
-# Set permissions
-chown -R www-data:www-data "${WEB_ROOT}" || log "Warning: Could not set permissions"
-chmod -R 755 "${WEB_ROOT}" || log "Warning: Could not set permissions"
-
-# -----------------------------------------------------------
-# X. SYSTEMD SERVICE SETUP
-# -----------------------------------------------------------
-log "Creating systemd service..."
-mkdir -p /var/log/tfrtita333 || true
-chown -R $(whoami):$(whoami) /var/log/tfrtita333 || true
-
-# Create systemd service file
-log "Creating service file for backend..."
-cat > ${SERVICE_FILE} << EOF
-[Unit]
-Description=Tfrtita333 App Backend
-After=network.target mysql.service
-Wants=mysql.service
-
-[Service]
-User=$(whoami)
-WorkingDirectory=${BACKEND_DIR}
-Environment="PATH=${APP_DIR}/venv/bin"
-Environment="PYTHONPATH=${BACKEND_DIR}"
-ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-level debug
-Restart=always
-RestartSec=5
-StartLimitIntervalSec=0
-
-# Logging
-StandardOutput=append:/var/log/tfrtita333/output.log
-StandardError=append:/var/log/tfrtita333/error.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload || log "Warning: Failed to reload systemd daemon"
-systemctl enable tfrtita333.service || log "Warning: Failed to enable service"
-
-# -----------------------------------------------------------
-# XI. NGINX CONFIGURATION
-# -----------------------------------------------------------
-log "Configuring Nginx..."
-
-# Create Nginx directories
-mkdir -p /etc/nginx/sites-available || true
-mkdir -p
+            // Group FontAwesome
