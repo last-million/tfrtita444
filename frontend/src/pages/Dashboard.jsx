@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Dashboard.css'
 import { api } from '../services/api';
-import ServiceStatusAPI from '../services/ServiceStatusAPI';
+import axios from 'axios';
 
 // Import new components
 import CallAnalyticsChart from '../components/CallAnalyticsChart';
@@ -56,9 +56,21 @@ function Dashboard() {
   // Fetch dashboard stats from the backend API
   const fetchDashboardStats = async () => {
     try {
-      // Remove duplicate /api prefix since it's already in the base URL
-      const response = await api.get('/dashboard/stats');
-      setStats(response.data);
+      // Use native fetch instead of axios to avoid any bundling issues
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${api.defaults.baseURL}/dashboard/stats`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      } else {
+        throw new Error(`API error: ${response.status}`);
+      }
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       // Set default values if API fails
@@ -74,9 +86,21 @@ function Dashboard() {
   // Fetch recent activities from the backend
   const fetchRecentActivities = async () => {
     try {
-      // Remove duplicate /api prefix since it's already in the base URL
-      const response = await api.get('/dashboard/recent-activities');
-      setRecentActivities(response.data);
+      // Use native fetch instead of axios to avoid any bundling issues
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${api.defaults.baseURL}/dashboard/recent-activities`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setRecentActivities(data);
+      } else {
+        throw new Error(`API error: ${response.status}`);
+      }
     } catch (error) {
       console.error("Error fetching recent activities:", error);
       // Set empty array if API fails
@@ -88,15 +112,27 @@ function Dashboard() {
   const fetchServiceStatus = async () => {
     try {
       const updatedServices = [...services];
+      const token = localStorage.getItem('token');
       
-      // Get status for each service
+      // Sequential fetch for each service to avoid bundling issues
       for (let i = 0; i < updatedServices.length; i++) {
         try {
-          const response = await ServiceStatusAPI.getStatus(updatedServices[i].name);
-          updatedServices[i].connected = response.data.connected;
+          // Use native fetch instead of axios to avoid any bundling issues
+          const response = await fetch(`${api.defaults.baseURL}/credentials/status/${updatedServices[i].name}`, {
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            updatedServices[i].connected = data.connected || false;
+          } else {
+            updatedServices[i].connected = false;
+          }
         } catch (err) {
           console.error(`Error getting status for ${updatedServices[i].name}:`, err);
-          // Set to false if there's an error
           updatedServices[i].connected = false;
         }
       }
@@ -161,11 +197,11 @@ function Dashboard() {
   // Refresh all dashboard data
   const refreshDashboard = async () => {
     setIsLoading(true);
-    await Promise.all([
-      fetchDashboardStats(),
-      fetchRecentActivities(),
-      fetchServiceStatus()
-    ]);
+    
+    // Execute sequentially to avoid any potential Promise.all issues
+    await fetchDashboardStats();
+    await fetchRecentActivities();
+    await fetchServiceStatus();
     
     // Generate mock analytics data
     setCallAnalytics(generateCallAnalytics());
