@@ -816,4 +816,5 @@ log "Configuring Nginx..."
 mkdir -p /etc/nginx/sites-available || true
 mkdir -p /etc/nginx/sites-enabled || true
 
-# Create
+# Create Nginx configuration
+log "Creating optimized Nginx configuration
