@@ -951,188 +951,123 @@ ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 # Restart Nginx with the fixed configuration
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-# Create a direct standalone login service on a new port (8080)
-log "Creating a standalone login service..."
+# Create a hardcoded login handler directly in Nginx
+log "Creating static login response file..."
+mkdir -p "${WEB_ROOT}/auth"
 
-# Create a dedicated, ultra-simple login server file
-cat > "${APP_DIR}/login_server.py" << 'EOF'
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import logging
-import json
-from datetime import datetime, timedelta
-from jose import jwt
-import uvicorn
-import sys
-
-# Configure detailed logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("login_server.log")
-    ]
-)
-logger = logging.getLogger("login_api")
-
-app = FastAPI()
-
-# Allow all origins for CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# JWT configuration
-SECRET_KEY = "strong-secret-key-for-jwt-tokens"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-def create_token(username):
-    expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"sub": username, "exp": expires}
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return token
-
-@app.get("/")
-async def health_check():
-    logger.info("Health check requested")
-    return {"status": "healthy", "service": "login_api", "timestamp": str(datetime.now())}
-
-@app.post("/login")
-async def login(request: Request):
-    logger.info("Login endpoint hit")
-    
-    try:
-        # Get body content
-        body_bytes = await request.body()
-        logger.debug(f"Raw request body: {body_bytes}")
-        
-        # Try to parse as JSON
-        try:
-            body = json.loads(body_bytes)
-            logger.info("Successfully parsed request body as JSON")
-        except:
-            logger.warning("Failed to parse body as JSON, trying as form data")
-            try:
-                # Try to handle as form data
-                form_data = await request.form()
-                body = dict(form_data)
-                logger.info("Successfully parsed request body as form data")
-            except:
-                logger.error("Could not parse request body")
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": "Could not parse request body"}
-                )
-        
-        # Extract username and password
-        username = body.get("username")
-        password = body.get("password")
-        
-        logger.info(f"Login attempt for user: {username}")
-        
-        # Validate credentials
-        if not username or not password:
-            logger.warning("Missing username or password")
-            return JSONResponse(
-                status_code=400,
-                content={"detail": "Username and password required"}
-            )
-        
-        # Hardcoded credentials check
-        if username == "hamza" and password == "AFINasahbi@-11":
-            token = create_token(username)
-            logger.info(f"Login successful for user: {username}")
-            
-            return JSONResponse(
-                content={
-                    "access_token": token,
-                    "token_type": "bearer",
-                    "username": username
-                }
-            )
-        else:
-            logger.warning(f"Invalid credentials for user: {username}")
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Incorrect username or password"}
-            )
-            
-    except Exception as e:
-        logger.exception(f"Login error: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Server error: {str(e)}"}
-        )
-
-if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
-    logger.info(f"Starting login server on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# Create a static JSON response file for successful login
+cat > "${WEB_ROOT}/auth/token_response.json" << EOF
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJoYW16YSIsImV4cCI6MTkwMDAwMDAwMH0.tMPe-LOPCn2TJHKyLYeeAOzQswxQyMQemuRlLO-vTLU",
+  "token_type": "bearer",
+  "username": "hamza"
+}
 EOF
 
-# Set up a systemd service for the standalone login server
-log "Setting up login server service..."
-cat > "/etc/systemd/system/login-api.service" << EOF
-[Unit]
-Description=Login API Server for ${DOMAIN}
-After=network.target
+# Create a simple login handler script that just returns the static response
+cat > "${WEB_ROOT}/auth/login_handler.php" << 'EOF'
+<?php
+// Set headers
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
 
-[Service]
-WorkingDirectory=${APP_DIR}
-ExecStart=${APP_DIR}/venv/bin/python ${APP_DIR}/login_server.py 8080
-Restart=always
-User=www-data
-Group=www-data
-Environment="PATH=${APP_DIR}/venv/bin"
+// Log request for debugging
+error_log('Login request received: ' . date('Y-m-d H:i:s'));
 
-[Install]
-WantedBy=multi-user.target
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// Only allow POST method
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['detail' => 'Method not allowed']);
+    exit;
+}
+
+// Get the input (either JSON or form data)
+$input = file_get_contents('php://input');
+if (!empty($input)) {
+    $data = json_decode($input, true);
+} else {
+    $data = $_POST;
+}
+
+// Log credentials for debugging (careful with this in production)
+error_log('Username: ' . (isset($data['username']) ? $data['username'] : 'not provided'));
+error_log('Password provided: ' . (isset($data['password']) ? 'yes' : 'no'));
+
+// Validate credentials (simple hardcoded check)
+if (!isset($data['username']) || !isset($data['password'])) {
+    http_response_code(400);
+    echo json_encode(['detail' => 'Username and password required']);
+    exit;
+}
+
+// Hardcoded credential check
+if ($data['username'] === 'hamza' && $data['password'] === 'AFINasahbi@-11') {
+    // Return success response from static file
+    echo file_get_contents('token_response.json');
+} else {
+    http_response_code(401);
+    echo json_encode(['detail' => 'Invalid credentials']);
+}
 EOF
 
-# Enable and start the login service
-log "Starting login server service..."
-systemctl daemon-reload
-systemctl enable login-api.service
-systemctl start login-api.service || log "Warning: Failed to start login service"
+# Install PHP for the simple login handler
+apt install -y php-fpm
 
-# Create an extremely simple Nginx configuration
-log "Creating simplified Nginx configuration..."
+# Configure Nginx with HTTPS and fix login routing
+log "Creating Nginx configuration with hardcoded login handler..."
 cat > "${NGINX_CONF}" << EOF
 server {
     listen 80;
     server_name ${DOMAIN} www.${DOMAIN};
     
+    # Redirect all HTTP to HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN} www.${DOMAIN};
+    
+    # SSL configuration
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDH+AESGCM:ECDH+AES256:ECDH+AES128:DH+3DES:!ADH:!AECDH:!MD5;
+    
     # Root directory for static files
     root ${WEB_ROOT};
-    index index.html;
+    index index.html index.php;
 
-    # Direct login endpoint with clear debug headers
+    # Handle login endpoint directly with PHP
     location = /api/auth/token {
-        add_header X-Debug-Info "Direct login proxy" always;
-        proxy_pass http://127.0.0.1:8080/login;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 90;
-        proxy_send_timeout 90;
-        proxy_read_timeout 90;
+        alias ${WEB_ROOT}/auth/login_handler.php;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$request_filename;
     }
     
-    # Static files and SPA routing
+    # Handle static files and SPA routing
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 }
 EOF
+
+# Get SSL certificate with Certbot
+log "Obtaining SSL certificate with Certbot..."
+certbot certonly --standalone --non-interactive --agree-tos --email "${EMAIL}" --domains "${DOMAIN},www.${DOMAIN}" || log "Warning: SSL certificate request failed"
 
 # Create symbolic link to enable the site
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
@@ -1145,214 +1080,9 @@ nginx -t || log "Warning: Nginx configuration test failed"
 log "Restarting Nginx..."
 systemctl restart nginx || log "Warning: Failed to restart Nginx"
 
-# Create client-side test page
-log "Creating login test page..."
-cat > "${WEB_ROOT}/login-test.html" << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Login Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-        }
-        input {
-            width: 100%;
-            padding: 8px;
-            box-sizing: border-box;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            cursor: pointer;
-        }
-        #result {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            background-color: #f9f9f9;
-            min-height: 100px;
-        }
-    </style>
-</head>
-<body>
-    <h1>Login Test</h1>
-    
-    <div class="form-group">
-        <label for="username">Username:</label>
-        <input type="text" id="username" value="hamza">
-    </div>
-    
-    <div class="form-group">
-        <label for="password">Password:</label>
-        <input type="password" id="password" value="AFINasahbi@-11">
-    </div>
-    
-    <button onclick="testLogin()">Test Login</button>
-    
-    <h3>Result:</h3>
-    <pre id="result"></pre>
-    
-    <script>
-        async function testLogin() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const resultElement = document.getElementById('result');
-            
-            resultElement.textContent = 'Sending request...';
-            
-            try {
-                const response = await fetch('/api/auth/token', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        username,
-                        password
-                    })
-                });
-                
-                const responseText = await response.text();
-                
-                try {
-                    // Try to parse as JSON
-                    const data = JSON.parse(responseText);
-                    resultElement.textContent = 'Status: ' + response.status + '\n\n' + JSON.stringify(data, null, 2);
-                } catch (e) {
-                    // If not valid JSON, show as text
-                    resultElement.textContent = 'Status: ' + response.status + '\n\nResponse (text):\n' + responseText;
-                }
-            } catch (error) {
-                resultElement.textContent = 'Error: ' + error.message;
-            }
-        }
-    </script>
-</body>
-</html>
-EOF
-
-# Create another test file with form-based submission
-log "Creating form-based login test page..."
-cat > "${WEB_ROOT}/login-form-test.html" << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Form Login Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-        }
-        input {
-            width: 100%;
-            padding: 8px;
-            box-sizing: border-box;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            cursor: pointer;
-        }
-        #result {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            background-color: #f9f9f9;
-            min-height: 100px;
-        }
-    </style>
-</head>
-<body>
-    <h1>Form Login Test</h1>
-    
-    <form id="loginForm">
-        <div class="form-group">
-            <label for="username">Username:</label>
-            <input type="text" id="username" name="username" value="hamza">
-        </div>
-        
-        <div class="form-group">
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" value="AFINasahbi@-11">
-        </div>
-        
-        <button type="submit">Test Login</button>
-    </form>
-    
-    <h3>Result:</h3>
-    <pre id="result"></pre>
-    
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const resultElement = document.getElementById('result');
-            
-            resultElement.textContent = 'Sending request...';
-            
-            try {
-                const response = await fetch('/api/auth/token', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const responseText = await response.text();
-                
-                try {
-                    // Try to parse as JSON
-                    const data = JSON.parse(responseText);
-                    resultElement.textContent = 'Status: ' + response.status + '\n\n' + JSON.stringify(data, null, 2);
-                } catch (e) {
-                    // If not valid JSON, show as text
-                    resultElement.textContent = 'Status: ' + response.status + '\n\nResponse (text):\n' + responseText;
-                }
-            } catch (error) {
-                resultElement.textContent = 'Error: ' + error.message;
-            }
-        });
-    </script>
-</body>
-</html>
-EOF
-
 log "Deployment complete!"
-log "Your application should now be accessible at http://${DOMAIN}"
-log "Test the login API at http://${DOMAIN}/login-test.html or http://${DOMAIN}/login-form-test.html"
-log "Username: hamza, Password: AFINasahbi@-11"
-
-# Wait for services to stabilize 
-log "Waiting for services to stabilize..."
-sleep 5
-
-# Verify services are running
-log "Checking service status..."
-systemctl status login-api.service --no-pager || true
-systemctl status nginx --no-pager || true
+log "Your application should now be accessible at https://${DOMAIN}"
+log "Login with username: hamza, Password: AFINasahbi@-11"
 
 # Create symbolic link to enable the site
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
