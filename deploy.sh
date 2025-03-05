@@ -1312,8 +1312,8 @@ EOF
 chmod 644 "${WEB_ROOT}/test-auth.html"
 chown www-data:www-data "${WEB_ROOT}/test-auth.html"
 
-# Create super simplified Nginx configuration optimized for login endpoint
-log "Creating simplified Nginx configuration focused on auth endpoint..."
+# Create super simplified Nginx configuration optimized for login endpoint and other API routes
+log "Creating robust Nginx configuration for API endpoints..."
 cat > ${NGINX_CONF} << EOF
 server {
     listen 80 default_server;
@@ -1333,66 +1333,86 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
     
-    # CRITICAL: Extremely simplified auth token endpoint
-    # This is the most direct configuration possible
-    location = /api/auth/token {
-        # Important: no trailing slash in proxy_pass for exact path matching
-        proxy_pass http://localhost:8080/api/auth/token;
-        
-        # Required headers
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        
-        # CORS headers needed for auth
+    # Handle OPTIONS requests for CORS preflight
+    if (\$request_method = 'OPTIONS') {
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-        
-        # Debug headers to verify request is hitting the right endpoint
-        add_header X-Debug-URL "/api/auth/token" always;
-        add_header X-Debug-Backend "http://localhost:8080/api/auth/token" always;
-        
-        # Excessive timeouts
-        proxy_connect_timeout 600s;
-        proxy_send_timeout 600s;
-        proxy_read_timeout 600s;
-        send_timeout 600s;
-        
-        # Explicitly disable buffering
-        proxy_buffering off;
-        
-        # Don't close connections prematurely
-        proxy_http_version 1.1;
-        
-        # Accept larger request bodies for auth token
-        client_max_body_size 10M;
+        add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type,Accept,Origin,User-Agent,DNT,Cache-Control,X-Mx-ReqToken,Keep-Alive,X-Requested-With,If-Modified-Since' always;
+        add_header 'Access-Control-Max-Age' 1728000 always;
+        add_header 'Content-Type' 'text/plain charset=UTF-8' always;
+        add_header 'Content-Length' 0 always;
+        return 204;
     }
     
-    # General API endpoints
+    # CRITICAL: Dedicated auth token endpoint with proper error handling
+    location = /api/auth/token {
+        # Specific CORS headers for auth
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type,Accept,Origin,User-Agent,DNT,Cache-Control,X-Mx-ReqToken,Keep-Alive,X-Requested-With,If-Modified-Since' always;
+        
+        # Proxy to backend - important to use the complete URL
+        proxy_pass http://localhost:8080/api/auth/token;
+        
+        # Extensive header setup
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        # Increased timeouts
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        
+        # Allow large request bodies
+        client_max_body_size 10M;
+        
+        # Important: Disable buffering for immediate response handling
+        proxy_buffering off;
+    }
+    
+    # General API endpoints with better error handling
     location /api/ {
+        # Apply CORS
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization,Content-Type,Accept,Origin,User-Agent,DNT,Cache-Control,X-Mx-ReqToken,Keep-Alive,X-Requested-With,If-Modified-Since' always;
+        
+        # Proxy to backend
         proxy_pass http://localhost:8080;
+        
+        # Standard headers
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         
-        # Disable buffering for streaming responses
-        proxy_buffering off;
+        # Medium timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
         
-        # Extended timeouts
-        proxy_connect_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
+        # Important: Disable buffering for streaming responses
+        proxy_buffering off;
     }
     
-    # WebSocket support
+    # WebSocket support with improved configuration
     location /ws {
         proxy_pass http://localhost:8080/ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        
+        # Longer timeout for websocket connections
+        proxy_read_timeout 300s;
     }
 }
 EOF
