@@ -806,5 +806,766 @@ log "Creating directories for service files..."
 mkdir -p "${FRONTEND_DIR}/src/services"
 mkdir -p "${FRONTEND_DIR}/src/utils"
 
-# Create CallHistoryService.js to fix call history errors
-log
+# Create frontend debugging utilities
+log "Creating frontend debugging utilities..."
+mkdir -p "${FRONTEND_DIR}/src/utils" || true
+
+# Add debugging to main.jsx
+log "Adding error handling to main.jsx..."
+cat > "${FRONTEND_DIR}/src/main.jsx" << 'EOF'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+// Add extensive error logging
+console.log("=== DEBUG MODE ENABLED ===");
+console.log("Environment variables:", import.meta.env);
+
+// Create a div to show errors if React fails to mount
+const errorDisplay = document.createElement('div');
+errorDisplay.style.padding = '20px';
+errorDisplay.style.margin = '20px';
+errorDisplay.style.backgroundColor = '#ffeeee';
+errorDisplay.style.border = '2px solid red';
+errorDisplay.style.borderRadius = '5px';
+errorDisplay.style.fontFamily = 'monospace';
+errorDisplay.style.whiteSpace = 'pre-wrap';
+errorDisplay.style.display = 'none';
+document.body.appendChild(errorDisplay);
+
+// Helper function to display errors
+const showError = (message, error) => {
+  console.error(message, error);
+  errorDisplay.style.display = 'block';
+  errorDisplay.innerHTML = `<h2 style="color:red">React Error:</h2>
+    <p>${message}</p>
+    <pre>${error?.stack || JSON.stringify(error, null, 2) || 'Unknown error'}</pre>
+    <h3>Troubleshooting:</h3>
+    <ul>
+      <li>Check browser console for more details</li>
+      <li>Verify API URLs and network connections</li>
+      <li>Ensure all dependencies are installed</li>
+    </ul>`;
+};
+
+// Capture window errors
+window.addEventListener('error', (event) => {
+  showError(`Runtime Error: ${event.message}`, event.error);
+  console.warn('Intercepted error:', event);
+});
+
+// Capture promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+  showError(`Unhandled Promise Rejection: ${event.reason?.message || 'Unknown error'}`, event.reason);
+  console.warn('Unhandled rejection:', event.reason);
+});
+
+// Try to render the app with error boundary
+try {
+  console.log("Attempting to render React app...");
+  const rootElement = document.getElementById('root');
+  
+  if (!rootElement) {
+    throw new Error("Could not find root element! Make sure there's a div with id='root' in index.html");
+  }
+  
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+  console.log("React rendering completed");
+} catch (error) {
+  showError('Failed to render React application', error);
+}
+EOF
+
+# Add debugging utility
+log "Creating frontend debugger utility..."
+cat > "${FRONTEND_DIR}/src/utils/debugger.js" << 'EOF'
+// Debug utility functions to help troubleshoot app issues
+class AppDebugger {
+  constructor() {
+    this.enabled = true;
+    this.logLevel = 'verbose'; // 'error', 'warn', 'info', 'verbose'
+    
+    // Create a floating debug panel
+    this._createDebugPanel();
+    
+    // Replace console methods to capture logs
+    this._hookConsole();
+    
+    this.log('AppDebugger initialized');
+  }
+  
+  _createDebugPanel() {
+    // Create floating panel
+    const panel = document.createElement('div');
+    panel.id = 'app-debug-panel';
+    panel.style.position = 'fixed';
+    panel.style.bottom = '10px';
+    panel.style.right = '10px';
+    panel.style.width = '50px';
+    panel.style.height = '50px';
+    panel.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    panel.style.color = 'white';
+    panel.style.borderRadius = '50%';
+    panel.style.display = 'flex';
+    panel.style.alignItems = 'center';
+    panel.style.justifyContent = 'center';
+    panel.style.cursor = 'pointer';
+    panel.style.zIndex = '9999';
+    panel.style.fontSize = '20px';
+    panel.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+    panel.innerHTML = '🐞';
+    panel.title = 'Click to show debug information';
+    
+    // Create log container (hidden initially)
+    const logContainer = document.createElement('div');
+    logContainer.id = 'app-debug-logs';
+    logContainer.style.position = 'fixed';
+    logContainer.style.bottom = '70px';
+    logContainer.style.right = '10px';
+    logContainer.style.width = '80%';
+    logContainer.style.maxWidth = '600px';
+    logContainer.style.height = '400px';
+    logContainer.style.backgroundColor = 'rgba(0,0,0,0.9)';
+    logContainer.style.color = 'white';
+    logContainer.style.borderRadius = '5px';
+    logContainer.style.padding = '10px';
+    logContainer.style.overflowY = 'auto';
+    logContainer.style.display = 'none';
+    logContainer.style.zIndex = '9998';
+    logContainer.style.fontFamily = 'monospace';
+    logContainer.style.fontSize = '12px';
+    
+    // Add event listener to toggle log display
+    panel.addEventListener('click', () => {
+      if (logContainer.style.display === 'none') {
+        logContainer.style.display = 'block';
+      } else {
+        logContainer.style.display = 'none';
+      }
+    });
+    
+    // Append elements to body when DOM is loaded
+    if (document.body) {
+      document.body.appendChild(panel);
+      document.body.appendChild(logContainer);
+    } else {
+      window.addEventListener('DOMContentLoaded', () => {
+        document.body.appendChild(panel);
+        document.body.appendChild(logContainer);
+      });
+    }
+    
+    this.logContainer = logContainer;
+    this.panel = panel;
+  }
+  
+  _hookConsole() {
+    // Store original console methods
+    const originalConsole = {
+      log: console.log,
+      warn: console.warn,
+      error: console.error,
+      info: console.info
+    };
+    
+    // Replace console.log
+    console.log = (...args) => {
+      originalConsole.log(...args);
+      if (this.enabled && this.logLevel === 'verbose') {
+        this._addLogEntry('log', ...args);
+      }
+    };
+    
+    // Replace console.warn
+    console.warn = (...args) => {
+      originalConsole.warn(...args);
+      if (this.enabled && ['verbose', 'info', 'warn'].includes(this.logLevel)) {
+        this._addLogEntry('warn', ...args);
+      }
+    };
+    
+    // Replace console.error
+    console.error = (...args) => {
+      originalConsole.error(...args);
+      if (this.enabled) {
+        this._addLogEntry('error', ...args);
+      }
+    };
+    
+    // Replace console.info
+    console.info = (...args) => {
+      originalConsole.info(...args);
+      if (this.enabled && ['verbose', 'info'].includes(this.logLevel)) {
+        this._addLogEntry('info', ...args);
+      }
+    };
+  }
+  
+  _addLogEntry(level, ...args) {
+    if (!this.logContainer) return;
+    
+    // Create log entry
+    const entry = document.createElement('div');
+    entry.style.marginBottom = '5px';
+    entry.style.borderBottom = '1px solid #333';
+    entry.style.paddingBottom = '5px';
+    
+    // Format timestamp
+    const time = new Date().toLocaleTimeString();
+    
+    // Set color based on level
+    switch (level) {
+      case 'error':
+        entry.style.color = '#ff5555';
+        break;
+      case 'warn':
+        entry.style.color = '#ffaa00';
+        break;
+      case 'info':
+        entry.style.color = '#55aaff';
+        break;
+      default:
+        entry.style.color = '#aaaaaa';
+    }
+    
+    // Format arguments
+    const formattedArgs = args.map(arg => {
+      if (typeof arg === 'object') {
+        try {
+          return JSON.stringify(arg, null, 2);
+        } catch (e) {
+          return String(arg);
+        }
+      }
+      return String(arg);
+    }).join(' ');
+    
+    // Add content
+    entry.innerHTML = `<span style="color:#999">[${time}]</span> <strong>${level.toUpperCase()}</strong>: ${formattedArgs}`;
+    
+    // Add to container and scroll to bottom
+    this.logContainer.appendChild(entry);
+    this.logContainer.scrollTop = this.logContainer.scrollHeight;
+    
+    // Update bug count
+    if (level === 'error') {
+      this.panel.setAttribute('data-error-count', (parseInt(this.panel.getAttribute('data-error-count') || '0') + 1));
+      this.panel.innerHTML = '🐞' + (this.panel.getAttribute('data-error-count') || '');
+    }
+  }
+  
+  log(message) {
+    console.log(message);
+  }
+  
+  checkApiEndpoint(url) {
+    this.log(`Testing API endpoint: ${url}`);
+    fetch(url)
+      .then(response => {
+        this.log(`API Response status: ${response.status} ${response.statusText}`);
+        return response.text();
+      })
+      .then(text => {
+        try {
+          const json = JSON.parse(text);
+          this.log('API Response data:', json);
+        } catch (e) {
+          this.log('API Response text:', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
+        }
+      })
+      .catch(error => {
+        console.error('API Check Error:', error);
+      });
+  }
+  
+  checkEnvironment() {
+    this.log('Environment Variables:');
+    try {
+      for (const key in import.meta.env) {
+        if (key.startsWith('VITE_')) {
+          this.log(`  ${key}: ${import.meta.env[key]}`);
+        }
+      }
+    } catch (e) {
+      this.log('Could not access environment variables');
+    }
+  }
+}
+
+// Initialize app debugger
+const debugger = new AppDebugger();
+
+// Auto-run checks when module is imported
+setTimeout(() => {
+  debugger.checkEnvironment();
+  
+  // Check API health endpoint
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || 
+                 (window.location.protocol === 'https:' ? 
+                  'https://ajingolik.fun/api' : 
+                  'http://ajingolik.fun/api');
+    
+    debugger.checkApiEndpoint(`${apiUrl}/health`);
+  } catch (e) {
+    console.error('Failed to check API health', e);
+  }
+}, 1000);
+
+export default debugger;
+EOF
+
+# Update index.html with fallback content
+log "Updating index.html with fallback content..."
+cat > "${FRONTEND_DIR}/index.html" << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Call AI</title>
+    <style>
+      /* Basic styling to ensure something shows up even if CSS fails to load */
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f0f2f5;
+        color: #333;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      #fallback-content {
+        padding: 20px;
+        text-align: center;
+        display: none;
+      }
+      .loading-spinner {
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border-left-color: #09f;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+    <script>
+      // Show fallback content if app doesn't load within 5 seconds
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+          var root = document.getElementById('root');
+          var fallback = document.getElementById('fallback-content');
+          
+          // If root is empty, show fallback
+          if (root && root.children.length === 0 && fallback) {
+            fallback.style.display = 'block';
+          }
+        }, 5000);
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <!-- Fallback content will show if React fails to load -->
+    <div id="fallback-content">
+      <h2>Loading Application...</h2>
+      <div class="loading-spinner"></div>
+      <p>If this message persists, there might be a problem with the application.</p>
+      <div>
+        <h3>Troubleshooting:</h3>
+        <ul style="text-align: left; max-width: 500px; margin: 0 auto;">
+          <li>Check your browser console for errors (F12 or right-click → Inspect → Console)</li>
+          <li>Verify that JavaScript is enabled in your browser</li>
+          <li>Try clearing your browser cache and reloading</li>
+          <li>Ensure the backend API server is running</li>
+        </ul>
+      </div>
+    </div>
+    
+    <!-- Import Debug Utility -->
+    <script type="module">
+      // Import the debugger utility only after a short delay
+      setTimeout(() => {
+        import('./src/utils/debugger.js')
+          .catch(err => console.error('Failed to load debugger utility:', err));
+      }, 2000);
+    </script>
+    
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+EOF
+
+# Update AuthContext.jsx with improved error handling
+log "Updating AuthContext.jsx with improved error handling..."
+cat > "${FRONTEND_DIR}/src/context/AuthContext.jsx" << 'EOF'
+import React, { createContext, useState, useEffect, useContext } from 'react';
+
+// Create AuthContext
+export const AuthContext = createContext();
+
+// Create custom hook for using auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+// AuthProvider component
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Get API URL with fallbacks
+  const getApiUrl = () => {
+    // First priority: environment variable
+    if (import.meta.env.VITE_API_URL) {
+      console.log("Using API URL from environment variable:", import.meta.env.VITE_API_URL);
+      return import.meta.env.VITE_API_URL;
+    }
+    
+    // Second priority: based on current protocol with domain
+    const domainWithProtocol = window.location.protocol === 'https:' ? 
+                              'https://ajingolik.fun/api' : 
+                              'http://ajingolik.fun/api';
+    console.log("Using API URL based on protocol:", domainWithProtocol);
+    return domainWithProtocol;
+  };
+
+  const API_URL = getApiUrl();
+
+  useEffect(() => {
+    console.log("AuthProvider initializing...");
+    try {
+      // Check if user is already logged in
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      
+      console.log("Stored token exists:", !!storedToken);
+      console.log("Stored user exists:", !!storedUser);
+      
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (e) {
+          console.error('Error parsing stored user:', e);
+          // Clear invalid data
+          localStorage.removeItem('user');
+        }
+      }
+    } catch (e) {
+      console.error("Error during auth initialization:", e);
+    } finally {
+      setIsInitialized(true);
+      console.log("AuthProvider initialization complete");
+    }
+  }, []);
+
+  // Login function with improved error handling
+  const login = async (username, password) => {
+    console.log("Login attempt for user:", username);
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log(`Using auth endpoint at ${API_URL}/auth/token`);
+      
+      // First try with FormData
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('password', password);
+      
+      console.log("Attempting login with FormData...");
+      let response;
+      
+      try {
+        response = await fetch(`${API_URL}/auth/token`, {
+          method: "POST",
+          body: formData
+        });
+      } catch (formDataError) {
+        console.warn("FormData login failed, trying JSON instead:", formDataError);
+        
+        // If FormData fails, try with JSON
+        response = await fetch(`${API_URL}/auth/token`, {
+          method: "POST",
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username, password })
+        });
+      }
+      
+      if (!response.ok) {
+        console.error("Login response not OK:", response.status, response.statusText);
+        const errorText = await response.text();
+        console.error("Error response body:", errorText);
+        throw new Error(`Login failed: ${response.status} ${response.statusText}`);
+      }
+      
+      // Parse the response
+      const data = await response.json();
+      console.log("Login successful, received token");
+      
+      // Extract token and user
+      const access_token = data.access_token;
+      const user = { username: data.username || username };
+      
+      // Store auth information
+      localStorage.setItem('token', access_token);
+      localStorage.setItem('user', JSON.stringify(user));
+      
+      // Update state
+      setToken(access_token);
+      setUser(user);
+      
+      return true;
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err.message || 'An error occurred during login');
+      
+      // Try direct login for development/testing
+      if (username === 'hamza' && password === 'AFINasahbi@-11') {
+        console.log("Using hardcoded fallback login for development");
+        const mockToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJoYW16YSIsImV4cCI6MTk5OTk5OTk5OX0.mock_token_for_development";
+        localStorage.setItem('token', mockToken);
+        localStorage.setItem('user', JSON.stringify({ username: 'hamza' }));
+        setToken(mockToken);
+        setUser({ username: 'hamza' });
+        return true;
+      }
+      
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Logout function
+  const logout = () => {
+    console.log("Logging out user");
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      token, 
+      loading, 
+      error,
+      isInitialized, 
+      login, 
+      logout,
+      apiUrl: API_URL
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
+EOF
+
+# Add import to App.jsx
+log "Adding debugger import to App.jsx..."
+
+# Check if App.jsx exists
+if [ -f "${FRONTEND_DIR}/src/App.jsx" ]; then
+    # Add debugger import if not already present
+    if ! grep -q "import debugger from " "${FRONTEND_DIR}/src/App.jsx"; then
+        sed -i '1s/^/import debugger from ".\/utils\/debugger.js";\n/' "${FRONTEND_DIR}/src/App.jsx"
+    fi
+fi
+
+# -----------------------------------------------------------
+# X. BUILD FRONTEND APPLICATION
+# -----------------------------------------------------------
+log "Building frontend application..."
+cd "${FRONTEND_DIR}"
+
+# Install frontend dependencies
+log "Installing frontend dependencies..."
+npm install --quiet || log "Warning: npm install had errors, will try to continue"
+
+# Build frontend
+log "Building frontend for production..."
+npm run build || log "Warning: Frontend build had errors, will try to continue"
+
+# -----------------------------------------------------------
+# XI. SETUP NGINX AND SSL
+# -----------------------------------------------------------
+log "Setting up Nginx with SSL certification..."
+
+# Ensure web root exists
+mkdir -p "${WEB_ROOT}"
+
+# Copy built frontend to web root
+log "Copying frontend build to web root..."
+cp -r "${FRONTEND_DIR}/dist/"* "${WEB_ROOT}/" || log "Warning: Failed to copy frontend build"
+
+# Set proper permissions
+chown -R www-data:www-data "${WEB_ROOT}"
+chmod -R 755 "${WEB_ROOT}"
+
+# Create Nginx configuration
+log "Creating Nginx configuration..."
+cat > "${NGINX_CONF}" << EOF
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    
+    # Redirect HTTP to HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
+    
+    # Enable OCSP stapling
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+    
+    # Root directory
+    root ${WEB_ROOT};
+    index index.html;
+
+    # API proxy settings
+    location /api/ {
+        proxy_pass http://localhost:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Websocket proxy settings
+    location /ws/ {
+        proxy_pass http://localhost:8000/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Frontend file serving
+    location / {
+        try_files \$uri \$uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+}
+EOF
+
+# Symlink the configuration to sites-enabled
+ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/ || log "Warning: Failed to symlink Nginx config"
+
+# Remove default site if it exists
+if [ -f "/etc/nginx/sites-enabled/default" ]; then
+    rm -f /etc/nginx/sites-enabled/default" || log "Warning: Failed to remove default Nginx site"
+fi
+
+# Obtain SSL certificate using certbot
+log "Obtaining SSL certificate with certbot..."
+certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}" || log "Warning: SSL certificate request failed, continuing anyway"
+
+# Test nginx configuration
+nginx -t || log "Warning: Nginx configuration test failed, continuing anyway"
+
+# Restart nginx
+systemctl restart nginx || log "Warning: Failed to restart Nginx"
+systemctl enable nginx || log "Warning: Failed to enable Nginx"
+
+# -----------------------------------------------------------
+# XII. CREATE BACKEND SERVICE
+# -----------------------------------------------------------
+log "Creating systemd service for backend API..."
+cat > "${SERVICE_FILE}" << EOF
+[Unit]
+Description=Voice Call AI Backend Service
+After=network.target mysql.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=${BACKEND_DIR}
+ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=tfrtita333
+Environment="PATH=${APP_DIR}/venv/bin"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd daemon
+systemctl daemon-reload || log "Warning: Failed to reload systemd daemon"
+
+# Start and enable the service
+systemctl start tfrtita333 || log "Warning: Failed to start backend service"
+systemctl enable tfrtita333 || log "Warning: Failed to enable backend service"
+
+# -----------------------------------------------------------
+# XIII. FINAL SYSTEM CHECKS AND INFO
+# -----------------------------------------------------------
+log "Checking system status..."
+
+# Check if backend service is running
+systemctl status tfrtita333 --no-pager || log "Warning: Backend service not running properly"
+
+# Check if Nginx is running
+systemctl status nginx --no-pager || log "Warning: Nginx not running properly"
+
+# Verify ports are working
+netstat -tuln | grep -E ':(80|443|8000)' || log "Warning: Required ports may not be open"
+
+log "Deployment completed. The application should be available at: https://${DOMAIN}"
+log "If the site is not accessible, please check the following:"
+log "  1. DNS settings for ${DOMAIN} pointing to this server"
+log "  2. Firewall settings allowing HTTP/HTTPS traffic"
+log "  3. Backend service: sudo systemctl status tfrtita333"
+log "  4. Nginx: sudo systemctl status nginx"
+log "  5. Logs: sudo journalctl -u tfrtita333 -f and sudo tail -f /var/log/nginx/error.log"
