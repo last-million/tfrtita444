@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './CallHistory.css';
-import { api } from '../services/api';
+import CallService from '../services/CallService';
 import { useLanguage } from '../context/LanguageContext';
 import translations from '../translations';
 
@@ -32,12 +32,12 @@ const CallHistory = () => {
         params.search = query;
       }
       
-      // Use the correct endpoint from our api service
-      const response = await api.calls.getHistory(params);
+      // Use the CallService
+      const response = await CallService.getCallHistory(params);
       
-      if (response && response.data) {
-        setCallLogs(response.data);
-        setTotalPages(Math.ceil((response.data.length || 0) / 10));
+      if (response && response.calls) {
+        setCallLogs(response.calls);
+        setTotalPages(Math.ceil((response.pagination?.total || response.calls.length || 0) / 10));
       } else {
         setCallLogs([]);
         setTotalPages(1);
