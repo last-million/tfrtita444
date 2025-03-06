@@ -15,11 +15,22 @@ class CallService {
     try {
       console.log(`CallService: Initiating call to ${phoneNumber}`);
       
-      // Attempt the real call
+      // Validate and sanitize the Ultravox URL - prevents 502 errors
+      let sanitizedUltravoxUrl = null;
+      if (ultravoxUrl) {
+        // Validate Ultravox URL format
+        if (!this.isValidUltravoxUrl(ultravoxUrl)) {
+          console.warn(`CallService: Invalid Ultravox URL format: ${ultravoxUrl}`);
+          throw new Error("Invalid Ultravox URL format. Please use a valid Ultravox media URL.");
+        }
+        sanitizedUltravoxUrl = ultravoxUrl;
+      }
+      
+      // Attempt the real call with sanitized URL
       const response = await api.post('/calls/initiate', null, {
         params: {
           to_number: phoneNumber,
-          ultravox_url: ultravoxUrl
+          ultravox_url: sanitizedUltravoxUrl
         },
         timeout: 20000 // Increase timeout for call initiation
       });
@@ -35,6 +46,11 @@ class CallService {
         // The request was made and the server responded with a status code outside of 2xx
         if (error.response.status === 502) {
           userMessage = 'The call system is currently unavailable. This could be due to server maintenance or network issues.';
+          
+          // Handle Ultravox 502 specifically
+          if (ultravoxUrl) {
+            userMessage = 'The Ultravox voice service is currently unavailable. Please try again later or try a call without AI voice.';
+          }
         } else if (error.response.status === 404) {
           userMessage = 'The call service endpoint was not found. Please check server configuration.';
         } else if (error.response.status >= 500) {
@@ -61,6 +77,32 @@ class CallService {
   }
 
   /**
+   * Validates an Ultravox URL to ensure it has the correct format
+   * @param {string} url - The Ultravox URL to validate
+   * @returns {boolean} - Whether the URL is valid
+   */
+  isValidUltravoxUrl(url) {
+    // Basic validation for Ultravox URLs
+    if (!url) return false;
+    
+    try {
+      // Check if it's a valid URL
+      new URL(url);
+      
+      // Specific Ultravox domain checks
+      return (
+        url.includes('ultravox.ai') || 
+        url.includes('api.ultravox') || 
+        url.startsWith('wss://') ||
+        // Legacy format compatibility
+        url.match(/^https?:\/\/[\w-]+(\.[\w-]+)+([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?$/)
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
    * Initiate calls to multiple phone numbers
    * @param {string[]} phoneNumbers - Array of phone numbers to call
    * @param {string} ultravoxUrl - Optional Ultravox URL for AI voice integration
@@ -68,22 +110,80 @@ class CallService {
    */
   async initiateMultipleCalls(phoneNumbers, ultravoxUrl) {
     const results = [];
+    const failedCalls = {};
+    
+    // Validate the Ultravox URL once before making calls
+    let sanitizedUltravoxUrl = null;
+    if (ultravoxUrl) {
+      if (!this.isValidUltravoxUrl(ultravoxUrl)) {
+        console.warn(`CallService: Invalid Ultravox URL format: ${ultravoxUrl}`);
+        // Report all numbers as failed with the same error
+        for (const number of phoneNumbers) {
+          results.push({
+            number,
+            success: false,
+            error: "Invalid Ultravox URL format. Please use a valid Ultravox media URL."
+          });
+        }
+        return results;
+      }
+      sanitizedUltravoxUrl = ultravoxUrl;
+    }
+    
+    // Process calls with retry logic for failed calls
     for (const number of phoneNumbers) {
       try {
-        const result = await this.initiateCall(number, ultravoxUrl);
+        // Try calling with or without the sanitized Ultravox URL
+        const result = await this.initiateCall(number, sanitizedUltravoxUrl);
         results.push({
           number,
           success: true,
           data: result
         });
       } catch (error) {
-        results.push({
-          number,
-          success: false,
-          error: error.message
-        });
+        // If error is related to Ultravox, try again without Ultravox
+        if (sanitizedUltravoxUrl && error.message && 
+            (error.message.includes('Ultravox') || 
+             error.message.includes('unavailable') ||
+             (error.originalError && error.originalError.response && 
+              error.originalError.response.status === 502))) {
+          
+          try {
+            console.log(`CallService: Retrying call to ${number} without Ultravox`);
+            // Retry without Ultravox URL
+            const retryResult = await this.initiateCall(number, null);
+            results.push({
+              number,
+              success: true,
+              data: retryResult,
+              note: "Call completed without AI voice due to Ultravox service unavailability."
+            });
+          } catch (retryError) {
+            // Both attempts failed
+            failedCalls[number] = "The call system is currently unavailable. Tried with and without AI voice.";
+            results.push({
+              number,
+              success: false,
+              error: failedCalls[number]
+            });
+          }
+        } else {
+          // Non-Ultravox related error
+          failedCalls[number] = error.message || "Unknown error";
+          results.push({
+            number,
+            success: false,
+            error: error.message
+          });
+        }
       }
     }
+    
+    // Log failed calls summary
+    if (Object.keys(failedCalls).length > 0) {
+      console.error("Failed calls:", failedCalls);
+    }
+    
     return results;
   }
 
