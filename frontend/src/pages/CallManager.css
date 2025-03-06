@@ -337,6 +337,52 @@ body.dark-mode .inbound-call-config .webhook-url {
   color: #eee;
 }
 
+/* Call initiating notification styling */
+.call-initiating-message {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background-color: #3498db;
+  color: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  z-index: 1100;
+  font-weight: 500;
+  animation: slideIn 0.3s ease-out forwards, pulse 2s infinite;
+  display: flex;
+  align-items: center;
+}
+
+.call-initiating-message::before {
+  content: "📞";
+  margin-right: 10px;
+  font-size: 1.2em;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(52, 152, 219, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 152, 219, 0);
+  }
+}
+
 /* Media queries for responsiveness */
 @media (max-width: 768px) {
   .call-type-selector {
@@ -354,6 +400,13 @@ body.dark-mode .inbound-call-config .webhook-url {
 
   .add-client-modal-content {
     width: 90%;
+  }
+  
+  .call-initiating-message {
+    bottom: 15px;
+    right: 15px;
+    padding: 10px 15px;
+    font-size: 0.9rem;
   }
 }
 
