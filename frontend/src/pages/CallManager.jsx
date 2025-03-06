@@ -72,6 +72,11 @@ function CallManager() {
   const handleBulkCall = async () => {
     try {
       const numbers = phoneNumbers.split('\n').filter(num => num.trim() !== '')
+      if (numbers.length === 0) {
+        alert("Please enter at least one phone number to call.");
+        return;
+      }
+      
       console.log('Initiating calls:', numbers)
 
       const ultravoxApiKey = ServiceConnectionManager.getCredentials('Ultravox').apiKey;
@@ -84,32 +89,64 @@ function CallManager() {
       // Create a properly formatted Ultravox API URL based on latest documentation
       const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
       
-      // Use the CallService to initiate calls to multiple numbers
-      const results = await CallService.initiateMultipleCalls(numbers, ultravoxUrl);
+      // Show notification that calls are being initiated
+      const initiatingMessage = document.createElement('div');
+      initiatingMessage.className = 'call-initiating-message';
+      initiatingMessage.textContent = `Initiating calls to ${numbers.length} numbers...`;
+      document.body.appendChild(initiatingMessage);
       
-      // Log results
-      const successful = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-      
-      console.log(`Call results: ${successful} successful, ${failed} failed`);
-      
-      // Show failures if any
-      const failures = results.filter(r => !r.success);
-      if (failures.length > 0) {
-        const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
-        console.error('Failed calls:', failureMessages);
+      try {
+        // Use the CallService to initiate calls to multiple numbers
+        const results = await CallService.initiateMultipleCalls(numbers, ultravoxUrl);
         
-        if (failures.length < numbers.length) {
-          alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+        // Remove notification
+        document.body.removeChild(initiatingMessage);
+        
+        // Log results
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        console.log(`Call results: ${successful} successful, ${failed} failed`);
+        
+        // Show failures if any
+        const failures = results.filter(r => !r.success);
+        if (failures.length > 0) {
+          // Get common error message if all have the same error
+          const commonError = failures.every(f => f.error === failures[0].error) 
+            ? failures[0].error 
+            : null;
+          
+          const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
+          console.error('Failed calls:', failureMessages);
+          
+          if (commonError && commonError.includes('502')) {
+            alert(`Backend call service is currently unavailable (502 Bad Gateway). This is likely due to server maintenance or network issues.`);
+          } else if (commonError) {
+            alert(`All calls failed with the same error: ${commonError}`);
+          } else if (failures.length < numbers.length) {
+            alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+          } else {
+            alert(`All calls failed. See console for details.`);
+          }
         } else {
-          alert(`All calls failed. See console for details.`);
+          alert(`Successfully initiated ${callType} calls to ${numbers.length} numbers`);
         }
-      } else {
-        alert(`Initiating ${callType} calls to ${numbers.length} numbers`);
+      } catch (error) {
+        // Remove notification in case of error
+        if (document.body.contains(initiatingMessage)) {
+          document.body.removeChild(initiatingMessage);
+        }
+        throw error; // Re-throw to be handled by outer catch
       }
     } catch (error) {
       console.error('Error in bulk call:', error);
-      alert(`Error initiating bulk calls: ${error.message}`);
+      
+      // Provide more helpful error message
+      if (error.message && error.message.includes('502')) {
+        alert(`The call system is currently unavailable. This could be due to server maintenance or network issues.`);
+      } else {
+        alert(`Error initiating bulk calls: ${error.message}`);
+      }
     }
   }
 
@@ -210,28 +247,54 @@ function CallManager() {
       // Create a properly formatted Ultravox API URL
       const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
       
-      alert(`Calling selected numbers: ${selectedNumbers.join(', ')}`);
+      // Show notification that calls are being initiated
+      const initiatingMessage = document.createElement('div');
+      initiatingMessage.className = 'call-initiating-message';
+      initiatingMessage.textContent = `Calling ${selectedNumbers.length} selected clients...`;
+      document.body.appendChild(initiatingMessage);
       
-      // Use CallService to initiate multiple calls
-      const results = await CallService.initiateMultipleCalls(selectedNumbers, ultravoxUrl);
-      
-      // Log results
-      const successful = results.filter(r => r.success).length;
-      const failed = results.filter(r => !r.success).length;
-      
-      console.log(`Call results: ${successful} successful, ${failed} failed`);
-      
-      // Show failures if any
-      const failures = results.filter(r => !r.success);
-      if (failures.length > 0) {
-        const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
-        console.error('Failed calls:', failureMessages);
+      try {
+        // Use CallService to initiate multiple calls
+        const results = await CallService.initiateMultipleCalls(selectedNumbers, ultravoxUrl);
         
-        if (failures.length < selectedNumbers.length) {
-          alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+        // Remove notification
+        document.body.removeChild(initiatingMessage);
+        
+        // Log results
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        
+        console.log(`Call results: ${successful} successful, ${failed} failed`);
+        
+        // Show failures if any
+        const failures = results.filter(r => !r.success);
+        if (failures.length > 0) {
+          // Get common error message if all have the same error
+          const commonError = failures.every(f => f.error === failures[0].error) 
+            ? failures[0].error 
+            : null;
+          
+          const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
+          console.error('Failed calls:', failureMessages);
+          
+          if (commonError && commonError.includes('502')) {
+            alert(`Backend call service is currently unavailable (502 Bad Gateway). This is likely due to server maintenance or network issues.`);
+          } else if (commonError) {
+            alert(`All calls failed with the same error: ${commonError}`);
+          } else if (failures.length < selectedNumbers.length) {
+            alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+          } else {
+            alert(`All calls failed. See console for details.`);
+          }
         } else {
-          alert(`All calls failed. See console for details.`);
+          alert(`Successfully called ${selectedNumbers.length} clients`);
         }
+      } catch (error) {
+        // Remove notification in case of error
+        if (document.body.contains(initiatingMessage)) {
+          document.body.removeChild(initiatingMessage);
+        }
+        throw error; // Re-throw to be handled by outer catch
       }
     } catch (error) {
       console.error('Error in handleCallSelected:', error);
