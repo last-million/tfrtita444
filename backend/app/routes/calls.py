@@ -116,6 +116,43 @@ async def initiate_call(
         try:
             call_details = await twilio_service.make_call(to_number, from_number, ultravox_url)
             logger.info(f"Call initiated successfully: {call_details}")
+            
+            # Save the call to the database
+            try:
+                # Extract call details
+                call_sid = call_details.get("call_id") or call_details.get("sid") or f"sim-{datetime.now().timestamp()}"
+                status = call_details.get("status") or "queued"
+                
+                # Insert call record into the database
+                query = """
+                    INSERT INTO calls 
+                    (call_sid, from_number, to_number, direction, status, start_time, created_at) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE status = %s
+                """
+                
+                now = datetime.now()
+                values = (
+                    call_sid,
+                    from_number,
+                    to_number,
+                    "outbound",
+                    status,
+                    now,  # start_time
+                    now,  # created_at
+                    status  # for the ON DUPLICATE KEY UPDATE
+                )
+                
+                await db.execute(query, values)
+                logger.info(f"Call record saved to database with SID: {call_sid}")
+                
+                # Add confirmation to call_details
+                call_details["saved_to_database"] = True
+            except Exception as db_error:
+                logger.error(f"Failed to save call to database: {str(db_error)}")
+                call_details["saved_to_database"] = False
+                call_details["db_error"] = str(db_error)
+            
             return call_details
         except Exception as e:
             # Check if this is an Ultravox-specific error (e.g., connection issues)
