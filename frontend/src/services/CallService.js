@@ -13,16 +13,57 @@ class CallService {
   async initiateCall(phoneNumber, ultravoxUrl) {
     try {
       console.log(`CallService: Initiating call to ${phoneNumber}`);
+      
+      // First check if backend is available with a simple ping
+      try {
+        await api.get('/health', { timeout: 3000 });
+      } catch (healthError) {
+        console.warn('Backend health check failed, call may not work:', healthError);
+        // Continue anyway, as the call endpoint might still work
+      }
+      
+      // Attempt the call
       const response = await api.post('/calls/initiate', null, {
         params: {
           to_number: phoneNumber,
           ultravox_url: ultravoxUrl
-        }
+        },
+        timeout: 15000 // Increase timeout for call initiation
       });
+      
       return response.data;
     } catch (error) {
       console.error('CallService: Error initiating call:', error);
-      throw error;
+      
+      // Provide more user-friendly error message
+      let userMessage = 'Failed to initiate call';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code outside of 2xx
+        if (error.response.status === 502) {
+          userMessage = 'The call system is currently unavailable. This could be due to server maintenance or network issues.';
+        } else if (error.response.status === 404) {
+          userMessage = 'The call service endpoint was not found. Please check server configuration.';
+        } else if (error.response.status >= 500) {
+          userMessage = 'There was a server error while trying to initiate the call. Please try again later.';
+        } else if (error.response.status === 401 || error.response.status === 403) {
+          userMessage = 'Not authorized to make calls. Please check your credentials.';
+        } else {
+          userMessage = `Call failed with status code ${error.response.status}: ${error.response.data?.detail || 'Unknown error'}`;
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        userMessage = 'No response received from the call server. Please check your network connection.';
+      } else {
+        // Something happened in setting up the request
+        userMessage = `Error setting up call: ${error.message}`;
+      }
+      
+      // Create an enhanced error with user message
+      const enhancedError = new Error(userMessage);
+      enhancedError.originalError = error;
+      enhancedError.userMessage = userMessage;
+      throw enhancedError;
     }
   }
 
