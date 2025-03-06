@@ -12,6 +12,10 @@ class CallService {
    * @returns {Promise} - API response
    */
   async initiateCall(phoneNumber, ultravoxUrl) {
+    // Ensure correct format for phone number
+    if (phoneNumber && !phoneNumber.startsWith('+')) {
+      phoneNumber = '+' + phoneNumber.replace(/\D/g, '');
+    }
     try {
       console.log(`CallService: Initiating call to ${phoneNumber}`);
       
