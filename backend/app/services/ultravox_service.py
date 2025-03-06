@@ -10,6 +10,7 @@ from datetime import datetime
 import websockets
 import requests
 from typing import Dict, Optional, List, Any
+from urllib.parse import urlparse
 from ..config import settings
 from ..database import db
 
@@ -26,6 +27,31 @@ class UltravoxService:
             "X-API-Key": self.api_key,
             "Content-Type": "application/json"
         }
+
+    def is_valid_url(self, url: str) -> bool:
+        """
+        Validate if a URL is properly formatted and could be a valid Ultravox URL
+        """
+        if not url:
+            return False
+            
+        try:
+            result = urlparse(url)
+            # Check for basic URL validity
+            valid_scheme = result.scheme in ('http', 'https', 'wss', 'ws')
+            valid_netloc = bool(result.netloc)
+            
+            # Check for Ultravox-specific patterns
+            ultravox_pattern = (
+                'ultravox.ai' in result.netloc or
+                'api.ultravox' in result.netloc or
+                result.scheme == 'wss'
+            )
+            
+            return valid_scheme and valid_netloc and ultravox_pattern
+        except Exception as e:
+            logger.error(f"URL validation error: {str(e)}")
+            return False
 
     async def create_call_session(
         self, 
@@ -69,10 +95,12 @@ class UltravoxService:
                 "recordingEnabled": True  # Enable call recording by default
             }
 
+            # Add timeout to prevent long-hanging requests
             response = requests.post(
                 self.base_url,
                 headers=self.headers,
-                json=payload
+                json=payload,
+                timeout=30  # 30 second timeout
             )
             
             if not response.ok:
@@ -87,6 +115,12 @@ class UltravoxService:
                 "language": language_hint
             }
 
+        except requests.exceptions.Timeout:
+            logger.error("Ultravox API request timed out")
+            raise Exception("The Ultravox service is not responding. Please try again later.")
+        except requests.exceptions.ConnectionError:
+            logger.error("Ultravox API connection error")
+            raise Exception("Could not connect to the Ultravox service. Please check network connectivity.")
         except Exception as e:
             logger.error(f"Error creating Ultravox call: {str(e)}")
             raise
@@ -105,13 +139,34 @@ class UltravoxService:
 
         try:
             # Connect to Ultravox WebSocket
-            session = await self.create_call_session(
-                system_prompt="You are an AI assistant helping with customer inquiries.",
-                first_message="Hello! How can I help you today?"
-            )
-            
-            ultravox_ws = await websockets.connect(session['join_url'])
-            logger.info(f"Connected to Ultravox WebSocket for call {call_sid}")
+            try:
+                session = await self.create_call_session(
+                    system_prompt="You are an AI assistant helping with customer inquiries.",
+                    first_message="Hello! How can I help you today?"
+                )
+                
+                if not session.get('join_url'):
+                    raise Exception("Missing join_url in Ultravox session response")
+                
+                join_url = session['join_url']
+                
+                # Validate the join URL
+                if not self.is_valid_url(join_url):
+                    raise Exception(f"Invalid Ultravox WebSocket URL: {join_url}")
+                
+                # Add timeout to WebSocket connection
+                ultravox_ws = await asyncio.wait_for(
+                    websockets.connect(join_url),
+                    timeout=15  # 15 second connection timeout
+                )
+                
+                logger.info(f"Connected to Ultravox WebSocket for call {call_sid}")
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout connecting to Ultravox WebSocket for call {call_sid}")
+                raise Exception("Connection to Ultravox timed out")
+            except Exception as e:
+                logger.error(f"Failed to connect to Ultravox: {str(e)}")
+                raise
 
             async def handle_ultravox_messages():
                 try:
@@ -181,7 +236,10 @@ class UltravoxService:
             logger.error(f"Error in media stream processing: {str(e)}")
         finally:
             if ultravox_ws:
-                await ultravox_ws.close()
+                try:
+                    await ultravox_ws.close()
+                except Exception as close_error:
+                    logger.error(f"Error closing Ultravox WebSocket: {str(close_error)}")
             
             # Update call records
             end_time = datetime.now()
