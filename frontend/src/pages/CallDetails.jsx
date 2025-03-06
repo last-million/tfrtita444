@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
+import CallService from '../services/CallService';
 import { useLanguage } from '../context/LanguageContext';
 import translations from '../translations';
 import './CallDetails.css';
@@ -23,8 +23,8 @@ const CallDetails = () => {
   const fetchCallDetails = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get(`/api/calls/${callSid}`);
-      setCallDetails(response.data);
+      const response = await CallService.getCallDetails(callSid);
+      setCallDetails(response);
     } catch (error) {
       console.error("Error fetching call details:", error);
       // For demo purposes, set mock data
