@@ -15,14 +15,14 @@ export const api = axios.create({
 
 // Add calls API methods directly to the api object
 api.calls = {
-  // Initiate a new call
+  // Initiate a new call - sending data in the request body instead of params
   initiate: async (toNumber, ultravoxUrl) => {
     try {
-      return await api.post('/calls/initiate', null, {
-        params: {
-          to_number: toNumber,
-          ultravox_url: ultravoxUrl
-        },
+      return await api.post('/calls/initiate', {
+        to_number: toNumber,
+        to: toNumber, // Include both formats for compatibility
+        ultravox_url: ultravoxUrl
+      }, {
         timeout: 20000 // Increase timeout for call API
       });
     } catch (error) {
