@@ -2214,7 +2214,7 @@ server {
         add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
         expires -1;
         etag off;
-        add_header Last-Modified $date_gmt;
+        add_header Last-Modified "\$time_iso8601" always;
         add_header Content-Type "application/javascript" always;
         try_files \$uri =404;
     }
