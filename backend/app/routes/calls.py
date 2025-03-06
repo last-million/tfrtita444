@@ -46,8 +46,9 @@ class Client(BaseModel):
 
 @router.post("/initiate")
 async def initiate_call(
-    to_number: str = Query(..., title="The number to call"),
-    from_number: str = Query("+1234567890", title="Twilio From Number"),
+    request: Request,
+    to_number: Optional[str] = Query(None, title="The number to call"),
+    from_number: Optional[str] = Query("+1234567890", title="Twilio From Number"),
     ultravox_url: Optional[str] = Query(None, title="Ultravox WebSocket URL"),
     user=Depends(verify_token)
 ):
@@ -55,6 +56,28 @@ async def initiate_call(
     Initiate an outbound call via Twilio, optionally connecting to Ultravox
     """
     try:
+        # Check if parameters were sent as query params or in the request body
+        if not to_number:
+            # Try to get parameters from request body
+            try:
+                body = await request.json()
+                to_number = body.get("to_number") or body.get("to")
+                from_number = body.get("from_number") or body.get("from") or from_number
+                ultravox_url = body.get("ultravox_url") or ultravox_url
+            except:
+                # If not JSON, try to get from form data
+                try:
+                    form = await request.form()
+                    to_number = form.get("to_number") or form.get("to")
+                    from_number = form.get("from_number") or form.get("from") or from_number
+                    ultravox_url = form.get("ultravox_url") or ultravox_url
+                except:
+                    # If not form data, try to get from URL params
+                    params = dict(request.query_params)
+                    to_number = params.get("to_number") or params.get("to")
+                    from_number = params.get("from_number") or params.get("from") or from_number
+                    ultravox_url = params.get("ultravox_url") or ultravox_url
+
         # Log the request details
         logger.info(f"Call initiation request - To: {to_number}, From: {from_number}, Ultravox URL: {ultravox_url}")
         
