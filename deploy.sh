@@ -1097,12 +1097,12 @@ class AppDebugger {
   }
 }
 
-// Initialize app debugger
-const debugger = new AppDebugger();
+// Initialize app debugger (using appDbg to avoid reserved keyword "debugger")
+const appDbg = new AppDebugger();
 
 // Auto-run checks when module is imported
 setTimeout(() => {
-  debugger.checkEnvironment();
+  appDbg.checkEnvironment();
   
   // Check API health endpoint
   try {
@@ -1111,13 +1111,13 @@ setTimeout(() => {
                   'https://ajingolik.fun/api' : 
                   'http://ajingolik.fun/api');
     
-    debugger.checkApiEndpoint(`${apiUrl}/health`);
+    appDbg.checkApiEndpoint(`${apiUrl}/health`);
   } catch (e) {
     console.error('Failed to check API health', e);
   }
 }, 1000);
 
-export default debugger;
+export default appDbg;
 EOF
 
 # Update index.html with fallback content
@@ -1393,8 +1393,8 @@ log "Adding debugger import to App.jsx..."
 # Check if App.jsx exists
 if [ -f "${FRONTEND_DIR}/src/App.jsx" ]; then
     # Add debugger import if not already present
-    if ! grep -q "import debugger from " "${FRONTEND_DIR}/src/App.jsx"; then
-        sed -i '1s/^/import debugger from ".\/utils\/debugger.js";\n/' "${FRONTEND_DIR}/src/App.jsx"
+    if ! grep -q "import appDbg from " "${FRONTEND_DIR}/src/App.jsx"; then
+        sed -i '1s/^/import appDbg from ".\/utils\/debugger.js";\n/' "${FRONTEND_DIR}/src/App.jsx"
     fi
 fi
 
@@ -1503,7 +1503,7 @@ ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/ || log "Warning: Failed to syml
 
 # Remove default site if it exists
 if [ -f "/etc/nginx/sites-enabled/default" ]; then
-    rm -f /etc/nginx/sites-enabled/default" || log "Warning: Failed to remove default Nginx site"
+    rm -f "/etc/nginx/sites-enabled/default" || log "Warning: Failed to remove default Nginx site"
 fi
 
 # Obtain SSL certificate using certbot
