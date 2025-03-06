@@ -7,22 +7,60 @@ class CallHistoryService {
    * @param {Object} options - Pagination options
    * @param {number} options.page - Page number (starts at 1)
    * @param {number} options.limit - Number of items per page
+   * @param {string} options.status - Optional filter by call status
+   * @param {string} options.search - Optional search query
    * @returns {Promise<Object>} - Call history and pagination info
    */
   async getHistory(options = { page: 1, limit: 10 }) {
     try {
-      // Direct API call instead of using api.calls which might not be defined
-      const response = await api.get('/calls/history', {
-        params: {
-          page: options.page,
-          limit: options.limit
-        }
-      });
+      console.log('CallHistoryService: Fetching call history with options:', options);
+      
+      // Prepare request parameters
+      const params = {
+        page: options.page || 1,
+        limit: options.limit || 10
+      };
+      
+      // Add optional filters if provided
+      if (options.status && options.status !== 'all') {
+        params.status = options.status;
+      }
+      
+      if (options.search) {
+        params.search = options.search;
+      }
+      
+      // Make direct API call
+      const response = await api.get('/calls/history', { params });
+      
+      if (!response.data || !response.data.calls) {
+        console.warn('CallHistoryService: Received malformed data from API');
+        throw new Error('Received malformed data from API');
+      }
+      
+      console.log(`CallHistoryService: Retrieved ${response.data.calls.length} calls`);
       return response.data;
     } catch (error) {
-      console.error('Error fetching call history:', error);
+      console.error('CallHistoryService: Error fetching call history:', error);
       
-      // Return mock data if the API call fails
+      // Check if we should fall back to local data
+      // In production, we'd want to show a user-friendly error instead
+      const shouldUseFallback = true;
+      
+      if (!shouldUseFallback) {
+        return {
+          calls: [],
+          pagination: {
+            page: options.page,
+            limit: options.limit,
+            total: 0,
+            pages: 0
+          }
+        };
+      }
+      
+      // Use fallback data for development/testing purposes only
+      console.warn('CallHistoryService: Using fallback data for call history');
       return {
         calls: [
           {
