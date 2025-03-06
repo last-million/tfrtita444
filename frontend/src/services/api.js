@@ -16,36 +16,57 @@ export const api = axios.create({
 // Add calls API methods directly to the api object
 api.calls = {
   // Initiate a new call
-  initiate: (toNumber, ultravoxUrl) => {
-    return api.post('/calls/initiate', null, {
-      params: {
-        to_number: toNumber,
-        ultravox_url: ultravoxUrl
-      }
-    });
+  initiate: async (toNumber, ultravoxUrl) => {
+    try {
+      return await api.post('/calls/initiate', null, {
+        params: {
+          to_number: toNumber,
+          ultravox_url: ultravoxUrl
+        },
+        timeout: 20000 // Increase timeout for call API
+      });
+    } catch (error) {
+      console.error('API calls.initiate error:', error);
+      throw error;
+    }
   },
   
   // Get call history with pagination
-  getHistory: (options = { page: 1, limit: 10 }) => {
-    return api.get('/calls/history', {
-      params: {
-        page: options.page,
-        limit: options.limit
-      }
-    });
+  getHistory: async (options = { page: 1, limit: 10 }) => {
+    try {
+      return await api.get('/calls/history', {
+        params: {
+          page: options.page,
+          limit: options.limit
+        }
+      });
+    } catch (error) {
+      console.error('API calls.getHistory error:', error);
+      throw error;
+    }
   },
   
   // Get details for a specific call
-  getCallDetails: (callSid) => {
-    return api.get(`/calls/${callSid}`);
+  getCallDetails: async (callSid) => {
+    try {
+      return await api.get(`/calls/${callSid}`);
+    } catch (error) {
+      console.error(`API calls.getCallDetails error for ${callSid}:`, error);
+      throw error;
+    }
   },
   
   // Initiate bulk calls
-  bulkCall: (phoneNumbers, messageTemplate) => {
-    return api.post('/calls/bulk', {
-      phone_numbers: phoneNumbers,
-      message_template: messageTemplate
-    });
+  bulkCall: async (phoneNumbers, messageTemplate) => {
+    try {
+      return await api.post('/calls/bulk', {
+        phone_numbers: phoneNumbers,
+        message_template: messageTemplate
+      });
+    } catch (error) {
+      console.error('API calls.bulkCall error:', error);
+      throw error;
+    }
   }
 };
 
