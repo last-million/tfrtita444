@@ -5,7 +5,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://ajingolik.fun/api';
 console.log('Using API URL:', API_URL);
 
 // Create an axios instance with the base URL
-const axiosInstance = axios.create({
+export const api = axios.create({
   baseURL: API_URL,
   timeout: 10000,
   headers: {
@@ -13,50 +13,44 @@ const axiosInstance = axios.create({
   },
 });
 
-// Create the API object with structured methods
-export const api = {
-  // Base axios instance for direct use
-  ...axiosInstance,
+// Add calls API methods directly to the api object
+api.calls = {
+  // Initiate a new call
+  initiate: (toNumber, ultravoxUrl) => {
+    return api.post('/calls/initiate', null, {
+      params: {
+        to_number: toNumber,
+        ultravox_url: ultravoxUrl
+      }
+    });
+  },
   
-  // Call related API methods
-  calls: {
-    // Initiate a new call
-    initiate: (toNumber, ultravoxUrl) => {
-      return axiosInstance.post('/calls/initiate', null, {
-        params: {
-          to_number: toNumber,
-          ultravox_url: ultravoxUrl
-        }
-      });
-    },
-    
-    // Get call history with pagination
-    getHistory: (options = { page: 1, limit: 10 }) => {
-      return axiosInstance.get('/calls/history', {
-        params: {
-          page: options.page,
-          limit: options.limit
-        }
-      });
-    },
-    
-    // Get details for a specific call
-    getCallDetails: (callSid) => {
-      return axiosInstance.get(`/calls/${callSid}`);
-    },
-    
-    // Initiate bulk calls
-    bulkCall: (phoneNumbers, messageTemplate) => {
-      return axiosInstance.post('/calls/bulk', {
-        phone_numbers: phoneNumbers,
-        message_template: messageTemplate
-      });
-    }
+  // Get call history with pagination
+  getHistory: (options = { page: 1, limit: 10 }) => {
+    return api.get('/calls/history', {
+      params: {
+        page: options.page,
+        limit: options.limit
+      }
+    });
+  },
+  
+  // Get details for a specific call
+  getCallDetails: (callSid) => {
+    return api.get(`/calls/${callSid}`);
+  },
+  
+  // Initiate bulk calls
+  bulkCall: (phoneNumbers, messageTemplate) => {
+    return api.post('/calls/bulk', {
+      phone_numbers: phoneNumbers,
+      message_template: messageTemplate
+    });
   }
 };
 
 // Add custom error handler for credential status endpoints
-axiosInstance.interceptors.response.use(
+api.interceptors.response.use(
   response => response,
   error => {
     // Check if this is a credential status endpoint
@@ -85,7 +79,7 @@ axiosInstance.interceptors.response.use(
 );
 
 // Add a request interceptor to include auth token in headers
-axiosInstance.interceptors.request.use(
+api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
