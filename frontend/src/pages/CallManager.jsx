@@ -3,7 +3,7 @@ import './CallManager.css'
 import ServiceConnectionManager from '../services/ServiceConnectionManager'
 import { useLanguage } from '../context/LanguageContext';
 import translations from '../translations';
-import { api } from '../services/api';
+import CallService from '../services/CallService';
 import UltravoxToolsManager from '../services/UltravoxToolsManager';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPhone, faClock, faUser, faFileAudio, faFileText, faDollarSign, faList, faCalendar, faEnvelope } from '@fortawesome/free-solid-svg-icons';
@@ -70,44 +70,47 @@ function CallManager() {
   }, []);
 
   const handleBulkCall = async () => {
-    const numbers = phoneNumbers.split('\n').filter(num => num.trim() !== '')
-    console.log('Initiating calls:', numbers)
+    try {
+      const numbers = phoneNumbers.split('\n').filter(num => num.trim() !== '')
+      console.log('Initiating calls:', numbers)
 
-    const ultravoxApiKey = ServiceConnectionManager.getCredentials('Ultravox').apiKey;
+      const ultravoxApiKey = ServiceConnectionManager.getCredentials('Ultravox').apiKey;
 
-    if (!ultravoxApiKey) {
-        alert("Ultravox API Key is not configured. Please connect Ultravox service.");
-        return;
-    }
+      if (!ultravoxApiKey) {
+          alert("Ultravox API Key is not configured. Please connect Ultravox service.");
+          return;
+      }
 
-    // Implement actual call initiation logic with proper error handling
-    for (const number of numbers) {
-        try {
-            // Create a properly formatted Ultravox API URL based on latest documentation
-            // Format: https://api.ultravox.ai/api/v1/calls/{callId}/join
-            // We need to generate a callId or use the Ultravox service to create one
-            const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
-            
-            console.log(`Initiating call to ${number} with Ultravox URL: ${ultravoxUrl}`);
-            
-            // Call the initiate API with the phone number and Ultravox URL
-            const response = await api.calls.initiate(number, ultravoxUrl);
-            console.log(`Call initiated to ${number}`, response);
-        } catch (error) {
-            console.error(`Failed to initiate call to ${number}:`, error);
-            
-            // Provide more detailed error information
-            let errorMessage = error.message;
-            if (error.response) {
-                errorMessage = `Status ${error.response.status}: ${error.response.data?.detail || error.message}`;
-                console.error('Error details:', error.response.data);
-            }
-            
-            alert(`Failed to initiate call to ${number}: ${errorMessage}`);
+      // Create a properly formatted Ultravox API URL based on latest documentation
+      const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
+      
+      // Use the CallService to initiate calls to multiple numbers
+      const results = await CallService.initiateMultipleCalls(numbers, ultravoxUrl);
+      
+      // Log results
+      const successful = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      
+      console.log(`Call results: ${successful} successful, ${failed} failed`);
+      
+      // Show failures if any
+      const failures = results.filter(r => !r.success);
+      if (failures.length > 0) {
+        const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
+        console.error('Failed calls:', failureMessages);
+        
+        if (failures.length < numbers.length) {
+          alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+        } else {
+          alert(`All calls failed. See console for details.`);
         }
+      } else {
+        alert(`Initiating ${callType} calls to ${numbers.length} numbers`);
+      }
+    } catch (error) {
+      console.error('Error in bulk call:', error);
+      alert(`Error initiating bulk calls: ${error.message}`);
     }
-
-    alert(`Initiating ${callType} calls to ${numbers.length} numbers`);
   }
 
   const handleOpenAddClientModal = () => {
@@ -209,23 +212,25 @@ function CallManager() {
       
       alert(`Calling selected numbers: ${selectedNumbers.join(', ')}`);
       
-      // Make API calls for each selected number
-      for (const number of selectedNumbers) {
-        try {
-          console.log(`Initiating call to ${number} with Ultravox URL: ${ultravoxUrl}`);
-          const response = await api.calls.initiate(number, ultravoxUrl);
-          console.log(`Call initiated to ${number}`, response);
-        } catch (error) {
-          console.error(`Failed to initiate call to ${number}:`, error);
-          
-          // Provide more detailed error information
-          let errorMessage = error.message;
-          if (error.response) {
-            errorMessage = `Status ${error.response.status}: ${error.response.data?.detail || error.message}`;
-            console.error('Error details:', error.response.data);
-          }
-          
-          alert(`Failed to initiate call to ${number}: ${errorMessage}`);
+      // Use CallService to initiate multiple calls
+      const results = await CallService.initiateMultipleCalls(selectedNumbers, ultravoxUrl);
+      
+      // Log results
+      const successful = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      
+      console.log(`Call results: ${successful} successful, ${failed} failed`);
+      
+      // Show failures if any
+      const failures = results.filter(r => !r.success);
+      if (failures.length > 0) {
+        const failureMessages = failures.map(f => `${f.number}: ${f.error}`).join('\n');
+        console.error('Failed calls:', failureMessages);
+        
+        if (failures.length < selectedNumbers.length) {
+          alert(`${successful} calls initiated successfully, but ${failed} failed. See console for details.`);
+        } else {
+          alert(`All calls failed. See console for details.`);
         }
       }
     } catch (error) {
