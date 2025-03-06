@@ -2,13 +2,23 @@
 import { api } from './api';
 
 class SupabaseTablesService {
+  constructor() {
+    // Set default options
+    this.defaultOptions = {
+      tables: {
+        list: { endpoint: '/knowledge/tables/list' },
+        schema: { endpoint: '/knowledge/tables/schema' }
+      }
+    };
+  }
+
   /**
    * List all Supabase tables accessible to the application
    * @returns {Promise<Array>} - Array of table information objects
    */
   async listSupabaseTables() {
     try {
-      const response = await api.get('/knowledge/tables/list');
+      const response = await api.get(this.defaultOptions.tables.list.endpoint);
       return response.data.tables || [];
     } catch (error) {
       console.error('Error fetching Supabase tables:', error);
@@ -48,7 +58,7 @@ class SupabaseTablesService {
    */
   async getTableSchema(tableName, schema = 'public') {
     try {
-      const response = await api.get(`/knowledge/tables/schema`, {
+      const response = await api.get(this.defaultOptions.tables.schema.endpoint, {
         params: { table: tableName, schema }
       });
       return response.data;
