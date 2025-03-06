@@ -1463,9 +1463,9 @@ server {
     root ${WEB_ROOT};
     index index.html;
 
-    # API proxy settings
+    # API proxy settings - no trailing slash in proxy_pass to preserve /api/ prefix
     location /api/ {
-        proxy_pass http://localhost:8000/;
+        proxy_pass http://localhost:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -1474,6 +1474,7 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Prefix /api;
     }
 
     # Websocket proxy settings
