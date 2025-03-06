@@ -26,12 +26,12 @@ class CallService {
         sanitizedUltravoxUrl = ultravoxUrl;
       }
       
-      // Attempt the real call with sanitized URL
-      const response = await api.post('/calls/initiate', null, {
-        params: {
-          to_number: phoneNumber,
-          ultravox_url: sanitizedUltravoxUrl
-        },
+      // Attempt the real call with sanitized URL - send data in request body instead of query params
+      const response = await api.post('/calls/initiate', {
+        to_number: phoneNumber,
+        to: phoneNumber, // Include both formats for compatibility
+        ultravox_url: sanitizedUltravoxUrl
+      }, {
         timeout: 20000 // Increase timeout for call initiation
       });
       
