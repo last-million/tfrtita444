@@ -186,11 +186,52 @@ function CallManager() {
     }
   };
 
-  const handleCallSelected = () => {
-    const selectedNumbers = clients
-      .filter(client => selectedClientIds.includes(client.id))
-      .map(client => client.phoneNumber);
-    alert(`Calling selected numbers: ${selectedNumbers.join(', ')}`);
+  const handleCallSelected = async () => {
+    try {
+      const selectedNumbers = clients
+        .filter(client => selectedClientIds.includes(client.id))
+        .map(client => client.phoneNumber);
+      
+      if (selectedNumbers.length === 0) {
+        alert('No clients selected. Please select at least one client to call.');
+        return;
+      }
+      
+      const ultravoxApiKey = ServiceConnectionManager.getCredentials('Ultravox').apiKey;
+      
+      if (!ultravoxApiKey) {
+        alert("Ultravox API Key is not configured. Please connect Ultravox service.");
+        return;
+      }
+      
+      // Create a properly formatted Ultravox API URL
+      const ultravoxUrl = `https://api.ultravox.ai/v1/media/${ultravoxApiKey}`;
+      
+      alert(`Calling selected numbers: ${selectedNumbers.join(', ')}`);
+      
+      // Make API calls for each selected number
+      for (const number of selectedNumbers) {
+        try {
+          console.log(`Initiating call to ${number} with Ultravox URL: ${ultravoxUrl}`);
+          const response = await api.calls.initiate(number, ultravoxUrl);
+          console.log(`Call initiated to ${number}`, response);
+        } catch (error) {
+          console.error(`Failed to initiate call to ${number}:`, error);
+          
+          // Provide more detailed error information
+          let errorMessage = error.message;
+          if (error.response) {
+            errorMessage = `Status ${error.response.status}: ${error.response.data?.detail || error.message}`;
+            console.error('Error details:', error.response.data);
+          }
+          
+          alert(`Failed to initiate call to ${number}: ${errorMessage}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error in handleCallSelected:', error);
+      alert(`Error initiating calls: ${error.message}`);
+    }
   };
 
    const handleVoiceChange = (e) => {
