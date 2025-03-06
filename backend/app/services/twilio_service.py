@@ -102,29 +102,8 @@ class TwilioService:
                 )
                 logger.info(f"Standard Twilio call created. SID: {call.sid}")
 
-            # Insert call record into DB
-            try:
-                query = """
-                    INSERT INTO calls (
-                        call_sid, from_number, to_number, status,
-                        start_time, direction
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                values = (
-                    call.sid,
-                    from_number,
-                    to_number,
-                    call.status,
-                    datetime.utcnow(),
-                    'outbound'
-                )
-                await db.execute(query, values)
-                logger.info(f"Call record inserted into database. SID: {call.sid}")
-            except Exception as db_error:
-                # Don't fail the call if DB insert fails
-                logger.error(f"Failed to insert call record into database: {str(db_error)}")
-                # Continue with call creation anyway
+            # Note: Call record will be inserted by the route handler instead of here
+            # to avoid duplicate entries and ensure consistency
 
             return {
                 "status": "success",
