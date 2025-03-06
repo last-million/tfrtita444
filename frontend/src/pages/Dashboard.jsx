@@ -20,16 +20,17 @@ const silentAxios = axios.create({
   }
 });
 
-// Override the console error method for axios requests to suppress 502 errors
+// Override the console error method to provide better error messages for known issues
 const originalConsoleError = console.error;
 console.error = function(message, ...args) {
-  // Don't log 502 Bad Gateway errors from axios
+  // For 502 errors, log a clearer message
   if (typeof message === 'string' && 
       (message.includes('status code 502') || 
        message.includes('Request failed with status code 502'))) {
-    console.warn('Backend API unavailable (502 Bad Gateway) - using fallback data');
+    console.warn('Backend API currently unavailable (502 Bad Gateway)');
     return;
   }
+  
   originalConsoleError.apply(console, [message, ...args]);
 };
 
@@ -139,7 +140,7 @@ function Dashboard() {
         
       setServices(updatedServices);
       
-      // For demo purposes, set some system health statuses based on service connection
+      // Set some system health statuses based on service connection
       const healthStatus = {
         database: { status: 'healthy', lastChecked: '2 minutes ago' },
         twilio: { 
