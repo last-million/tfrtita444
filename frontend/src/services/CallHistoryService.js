@@ -11,7 +11,13 @@ class CallHistoryService {
    */
   async getHistory(options = { page: 1, limit: 10 }) {
     try {
-      const response = await api.calls.getHistory(options);
+      // Direct API call instead of using api.calls which might not be defined
+      const response = await api.get('/calls/history', {
+        params: {
+          page: options.page,
+          limit: options.limit
+        }
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching call history:', error);
