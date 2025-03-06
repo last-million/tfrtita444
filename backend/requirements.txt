@@ -1,0 +1,47 @@
+# Backend requirements for the Voice Call AI application
+
+# Web framework
+fastapi>=0.104.0
+uvicorn>=0.23.2
+pydantic>=2.4.2
+pydantic-settings>=2.0.3
+
+# Middleware and security
+python-multipart>=0.0.6
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+starlette>=0.27.0
+
+# Database
+pymysql>=1.1.0
+aiomysql>=0.2.0
+sqlalchemy>=2.0.22
+
+# WebSockets support
+websockets>=11.0.3
+
+# HTTP clients
+requests>=2.31.0
+httpx>=0.25.0  # Modern HTTP client with better async support
+urllib3>=2.0.7  # Required for advanced HTTP functionality
+
+# API resilience
+backoff>=2.2.1  # For exponential backoff and retry logic
+tenacity>=8.2.3  # Retry library for Python
+
+# Twilio integration
+twilio>=8.9.0
+
+# Async HTTP for improved performance
+aiohttp>=3.9.1  # Async HTTP client/server for asyncio
+
+# Audio processing
+# Note: audioop is part of the Python standard library
+
+# Utilities
+python-dotenv>=1.0.0
+aiofiles>=23.2.1
+pytz>=2023.3
+
+# JSON handling
+orjson>=3.9.7
