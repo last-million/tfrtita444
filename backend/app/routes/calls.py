@@ -73,17 +73,46 @@ async def initiate_call(
                 detail="The 'to_number' must be a valid phone number in E.164 format (+XXXXXXXXXXXX)"
             )
             
-        # Format Ultravox URL if provided
+        # Validate and format Ultravox URL if provided
         if ultravox_url:
             logger.info(f"Using Ultravox integration with URL: {ultravox_url}")
+            
+            # Validate Ultravox URL format
+            if not ultravox_service.is_valid_url(ultravox_url):
+                logger.error(f"Invalid Ultravox URL format: {ultravox_url}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid Ultravox URL format. Please use a valid Ultravox media URL."
+                )
+            
             # Make sure the URL is properly formatted according to Ultravox documentation
             if not ultravox_url.startswith(('https://', 'wss://')):
                 ultravox_url = f"wss://{ultravox_url.lstrip('/')}"
                 
-        # Initiate the call
-        call_details = await twilio_service.make_call(to_number, from_number, ultravox_url)
-        logger.info(f"Call initiated successfully: {call_details}")
-        return call_details
+        # Try to initiate the call with error handling for Ultravox-specific issues
+        try:
+            call_details = await twilio_service.make_call(to_number, from_number, ultravox_url)
+            logger.info(f"Call initiated successfully: {call_details}")
+            return call_details
+        except Exception as e:
+            # Check if this is an Ultravox-specific error (e.g., connection issues)
+            error_msg = str(e).lower()
+            if ultravox_url and ("ultravox" in error_msg or 
+                                 "connection" in error_msg or 
+                                 "timeout" in error_msg or
+                                 "websocket" in error_msg):
+                logger.warning(f"Ultravox connection issue, attempting call without Ultravox: {str(e)}")
+                
+                # Try again without Ultravox
+                call_details = await twilio_service.make_call(to_number, from_number, None)
+                logger.info(f"Call initiated successfully without Ultravox: {call_details}")
+                
+                # Add a note about using fallback
+                call_details["note"] = "Call completed without AI voice due to Ultravox service unavailability."
+                return call_details
+            else:
+                # Re-raise the original exception
+                raise
         
     except Exception as e:
         logger.error(f"Call initiation failed: {str(e)}", exc_info=True)
@@ -92,6 +121,10 @@ async def initiate_call(
         # Provide more specific error codes based on the exception
         if "invalid phone number" in str(e).lower():
             status_code = 400
+        elif "invalid ultravox url" in str(e).lower():
+            status_code = 400
+        elif "ultravox service" in str(e).lower() and ("unavailable" in str(e).lower() or "not responding" in str(e).lower()):
+            status_code = 502  # Map to the 502 Bad Gateway seen in the error
         elif "configuration" in str(e).lower() or "credentials" in str(e).lower():
             status_code = 503
             
