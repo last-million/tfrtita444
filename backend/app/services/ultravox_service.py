@@ -9,8 +9,11 @@ import base64
 from datetime import datetime
 import websockets
 import requests
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Union
 from urllib.parse import urlparse
+import tenacity
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import backoff
 from ..config import settings
 from ..database import db
 
@@ -52,6 +55,54 @@ class UltravoxService:
         except Exception as e:
             logger.error(f"URL validation error: {str(e)}")
             return False
+
+    # Configure retry decorator with exponential backoff for API calls
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((requests.exceptions.Timeout, requests.exceptions.ConnectionError)),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Ultravox API call failed. Retrying in {retry_state.next_action.sleep} seconds... "
+            f"(Attempt {retry_state.attempt_number}/3)"
+        )
+    )
+    def _make_api_request(self, payload: Dict) -> Dict:
+        """Make a request to the Ultravox API with retry logic"""
+        try:
+            # Add timeout to prevent long-hanging requests
+            response = requests.post(
+                self.base_url,
+                headers=self.headers,
+                json=payload,
+                timeout=30  # 30 second timeout
+            )
+            
+            if not response.ok:
+                status_code = response.status_code
+                error_text = response.text
+                logger.error(f"Ultravox create call error: {status_code} {error_text}")
+                
+                # Check for common errors and provide better messages
+                if status_code == 502:
+                    raise Exception("Ultravox service returned a 502 Bad Gateway error. The service may be temporarily unavailable.")
+                elif status_code == 401:
+                    raise Exception("Authentication failed with Ultravox API. Please check your API key.")
+                elif status_code == 400:
+                    raise Exception(f"Invalid request to Ultravox API: {error_text}")
+                else:
+                    raise Exception(f"Failed to create Ultravox call: {error_text}")
+
+            return response.json()
+        except requests.exceptions.Timeout:
+            logger.error("Ultravox API request timed out")
+            raise Exception("The Ultravox service is not responding. Please try again later.")
+        except requests.exceptions.ConnectionError:
+            logger.error("Ultravox API connection error")
+            raise Exception("Could not connect to the Ultravox service. Please check network connectivity.")
+        except Exception as e:
+            # Re-raise any other exceptions
+            logger.error(f"Error in Ultravox API request: {str(e)}")
+            raise
 
     async def create_call_session(
         self, 
@@ -95,19 +146,9 @@ class UltravoxService:
                 "recordingEnabled": True  # Enable call recording by default
             }
 
-            # Add timeout to prevent long-hanging requests
-            response = requests.post(
-                self.base_url,
-                headers=self.headers,
-                json=payload,
-                timeout=30  # 30 second timeout
-            )
+            # Use the retry-enabled API request method
+            data = self._make_api_request(payload)
             
-            if not response.ok:
-                logger.error(f"Ultravox create call error: {response.status_code} {response.text}")
-                raise Exception(f"Failed to create Ultravox call: {response.text}")
-
-            data = response.json()
             return {
                 "join_url": data.get("joinUrl"),
                 "call_id": data.get("callId"),
@@ -115,12 +156,6 @@ class UltravoxService:
                 "language": language_hint
             }
 
-        except requests.exceptions.Timeout:
-            logger.error("Ultravox API request timed out")
-            raise Exception("The Ultravox service is not responding. Please try again later.")
-        except requests.exceptions.ConnectionError:
-            logger.error("Ultravox API connection error")
-            raise Exception("Could not connect to the Ultravox service. Please check network connectivity.")
         except Exception as e:
             logger.error(f"Error creating Ultravox call: {str(e)}")
             raise
