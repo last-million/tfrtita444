@@ -1,6 +1,5 @@
 /**
  * Enhanced fixes for both Google Drive and Supabase vectorization
- * This script should be included in the index.html file by deploy.sh
  */
 
 // Fix all lowercase and uppercase variants of the Supabase tables service
@@ -63,7 +62,7 @@
       console.log('👉 Supabase.getTableSchema called for', tableName);
       
       try {
-        const response = await fetch(`/api/knowledge/tables/schema?table=${tableName}&schema=${schema}`);
+        const response = await fetch('/api/knowledge/tables/schema?table=' + tableName + '&schema=' + schema);
         if (response.ok) {
           return await response.json();
         } else {
@@ -108,7 +107,7 @@
     
     // Support for vector operations
     vectorize: async function(text, options = {}) {
-      console.log('👉 Supabase.vectorize called with:', text?.substring?.(0, 50) + '...');
+      console.log('👉 Supabase.vectorize called with:', text ? (text.substring ? text.substring(0, 50) + '...' : 'non-string') : 'null');
       
       // Create a mock embedding (1536 dimensions is standard for OpenAI embeddings)
       const mockEmbedding = Array(1536).fill(0).map(() => Math.random() - 0.5);
@@ -118,8 +117,7 @@
         vector: mockEmbedding,
         metadata: {
           dimensions: 1536,
-          model: "text-embedding-ada-002",
-          ...options
+          model: "text-embedding-ada-002"
         }
       };
     },
@@ -136,8 +134,7 @@
         ],
         metadata: {
           count: 3,
-          query_vector_length: 1536,
-          ...options
+          query_vector_length: 1536
         }
       };
     },
@@ -150,7 +147,7 @@
   
   // Enhanced vector service implementation
   const vectorService = {
-    vectorizeDocument: async function(document, options = {}) {
+    vectorizeDocument: async function(document, options) {
       console.log('👉 VectorService.vectorizeDocument called');
       
       // Generate mock embedding vector 
@@ -158,18 +155,17 @@
       
       return { 
         success: true, 
-        documentId: `doc_${Date.now()}`,
+        documentId: 'doc_' + Date.now(),
         embedding: mockEmbedding,
         metadata: {
           contentLength: typeof document === 'string' ? document.length : 0,
           language: "en",
-          timestamp: new Date().toISOString(),
-          ...options
+          timestamp: new Date().toISOString()
         }
       };
     },
     
-    searchVectors: async function(query, options = {}) {
+    searchVectors: async function(query, options) {
       console.log('👉 VectorService.searchVectors called with:', query);
       
       return { 
@@ -180,8 +176,7 @@
           { id: "doc3", content: "This is another relevant document that matches the query", similarity: 0.68, metadata: { title: "Document 3" } }
         ],
         query: query,
-        totalResults: 3,
-        ...options
+        totalResults: 3
       };
     },
     
@@ -204,7 +199,7 @@
       return { success: true, authenticated: true };
     },
     
-    listFiles: async function(options = {}) {
+    listFiles: async function(options) {
       console.log('👉 GoogleDriveService.listFiles called');
       return {
         files: [
@@ -224,7 +219,7 @@
 
   // Assign all Supabase-related services to all possible variable names
   const supabaseVarNames = ['Je', 'je', 'Et', 'et', 'Supabase', 'supabase', 'SupabaseService', 'supabaseService'];
-  supabaseVarNames.forEach(name => {
+  supabaseVarNames.forEach(function(name) {
     window[name] = supabaseTablesService;
   });
   
@@ -241,13 +236,13 @@
   // Add fallback for call service
   if (!window.CallService || !window.CallService.initiateCall) {
     window.CallService = window.CallService || {};
-    window.CallService.initiateCall = window.CallService.initiateCall || async function(phoneNumber, options = {}) {
+    window.CallService.initiateCall = window.CallService.initiateCall || async function(phoneNumber, options) {
       console.log('📞 CallService.initiateCall called for', phoneNumber);
       return {
         success: true,
-        callId: `CA${Date.now()}${Math.floor(Math.random() * 10000)}`,
+        callId: 'CA' + Date.now() + Math.floor(Math.random() * 10000),
         status: 'queued',
-        message: `Call to ${phoneNumber} has been queued (client-side fix)`,
+        message: 'Call to ' + phoneNumber + ' has been queued (client-side fix)',
         timestamp: new Date().toISOString()
       };
     };
@@ -268,13 +263,13 @@
       const match = errorText.match(/([a-zA-Z0-9_]+)\.listSupabaseTables is not a function/);
       if (match && match[1]) {
         const varName = match[1];
-        console.warn(`🔄 Fixing missing listSupabaseTables on ${varName}`);
+        console.warn('🔄 Fixing missing listSupabaseTables on ' + varName);
         window[varName] = supabaseTablesService;
       }
     }
     
     // Handle Google Drive errors
-    if (errorText.includes('GoogleDriveService') || errorText.includes('connect') && errorText.includes('undefined')) {
+    if (errorText.includes('GoogleDriveService') || (errorText.includes('connect') && errorText.includes('undefined'))) {
       console.warn('🔄 Fixing Google Drive integration');
       window.GoogleDriveService = googleDriveService;
       window.GoogleDrive = googleDriveService;
