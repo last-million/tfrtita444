@@ -13,6 +13,65 @@ export const api = axios.create({
   },
 });
 
+// Add Supabase service to the API object
+import SupabaseTablesService from './SupabaseTablesService';
+
+// Add Google Drive service integration
+api.drive = {
+  listFiles: async () => {
+    try {
+      // We'll implement a mock version since the real endpoint is unavailable
+      console.log('Mock Google Drive file listing');
+      // Return mock data
+      return { 
+        data: { 
+          files: [
+            { id: 'file1', name: 'Sales Report.pdf', mimeType: 'application/pdf', size: '1.2 MB', createdAt: new Date().toISOString() },
+            { id: 'file2', name: 'Customer Database.xlsx', mimeType: 'application/excel', size: '4.5 MB', createdAt: new Date().toISOString() },
+            { id: 'file3', name: 'Meeting Notes.docx', mimeType: 'application/word', size: '0.8 MB', createdAt: new Date().toISOString() }
+          ] 
+        } 
+      };
+    } catch (error) {
+      console.error('API drive.listFiles error:', error);
+      throw error;
+    }
+  },
+
+  downloadFile: async (fileId) => {
+    try {
+      console.log(`Mock Google Drive download for file ${fileId}`);
+      return { data: { downloadUrl: `https://example.com/download/${fileId}` } };
+    } catch (error) {
+      console.error(`API drive.downloadFile error for ${fileId}:`, error);
+      throw error;
+    }
+  }
+};
+
+// Add the supabase service to the api object
+api.supabase = {
+  listTables: async () => {
+    try {
+      const tables = await SupabaseTablesService.listSupabaseTables();
+      return { data: { tables } };
+    } catch (error) {
+      console.error('API supabase.listTables error:', error);
+      throw error;
+    }
+  },
+  
+  getTableSchema: async (tableName, schema = 'public') => {
+    try {
+      const tableSchema = await SupabaseTablesService.getTableSchema(tableName, schema);
+      return { data: tableSchema };
+    } catch (error) {
+      console.error(`API supabase.getTableSchema error for ${schema}.${tableName}:`, error);
+      throw error;
+    }
+  }
+};
+
 // Add calls API methods directly to the api object
 api.calls = {
   // Initiate a new call - sending data in the request body instead of params
