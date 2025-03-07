@@ -13,10 +13,12 @@ export default function SupabaseTableSelector({ onSelect }) {
   const fetchSupabaseTables = async () => {
     try {
       setIsLoading(true)
-      const response = await api.listSupabaseTables()
-      setTables(response.data.tables)
+      const response = await api.supabase.listTables()
+      setTables(response.data.tables || [])
     } catch (error) {
       console.error("Error fetching Supabase tables:", error)
+      // Use mock data as fallback
+      setTables(['customers', 'products', 'orders', 'users'])
     } finally {
       setIsLoading(false)
     }
