@@ -9,8 +9,8 @@ import SystemHealthIndicators from '../components/SystemHealthIndicators';
 import NotificationsPanel from '../components/NotificationsPanel';
 import QuickActionCards from '../components/QuickActionCards';
 
-// Use relative URL to ensure it works in any environment
-const API_BASE_URL = '/api';
+// API base URL is already set in api.js, so we should use the configured api client
+import { api } from '../services/api';
 
 // Create a silent axios instance that won't log errors to console
 const silentAxios = axios.create({
@@ -80,11 +80,10 @@ function Dashboard() {
   // Helper for making authenticated API requests with complete error suppression
   const makeRequest = async (url) => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-      
-      // Use our silent axios instance
-      const response = await silentAxios.get(`${API_BASE_URL}${url}`, { headers });
+      // Use our silent axios instance but with the configured api base URL
+      const response = await silentAxios.get(url, {
+        baseURL: api.defaults.baseURL
+      });
       
       if (response.status >= 200 && response.status < 300) {
         return response.data;
