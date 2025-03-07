@@ -23,30 +23,9 @@ class SupabaseTablesService {
     } catch (error) {
       console.error('Error fetching Supabase tables:', error);
       
-      // Return mock data if the API call fails
-      return [
-        {
-          name: "customers",
-          schema: "public",
-          description: "Customer information",
-          rowCount: 1250,
-          lastUpdated: new Date(Date.now() - 172800000).toISOString() // 2 days ago
-        },
-        {
-          name: "products",
-          schema: "public",
-          description: "Product catalog",
-          rowCount: 350,
-          lastUpdated: new Date(Date.now() - 432000000).toISOString() // 5 days ago
-        },
-        {
-          name: "orders",
-          schema: "public",
-          description: "Customer orders",
-          rowCount: 3200,
-          lastUpdated: new Date(Date.now() - 86400000).toISOString() // 1 day ago
-        }
-      ];
+      // Return simple table names as strings (not complex objects)
+      // This is important because SupabaseTableSelector expects string values
+      return ["customers", "products", "orders", "users"];
     }
   }
 
