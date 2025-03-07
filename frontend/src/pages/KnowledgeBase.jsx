@@ -14,10 +14,22 @@ export default function KnowledgeBase() {
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    console.log("KnowledgeBase: useEffect - loadFiles and loadTables"); // Add logging
-    actions.loadFiles()
-    actions.loadTables()
-  }, [actions])
+    console.log("KnowledgeBase: useEffect - loadFiles and loadTables"); 
+    // Use a flag to ensure this only runs once
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          actions.loadFiles(),
+          actions.loadTables()
+        ]);
+      } catch (error) {
+        console.error("Failed to load Knowledge Base data:", error);
+      }
+    };
+    
+    loadData();
+    // The empty dependency array ensures this only runs once on mount
+  }, []) // Removed actions from dependencies to prevent re-runs
 
   const totalFiles = state.files.length;
   const totalPages = useMemo(() => {
