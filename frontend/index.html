@@ -140,8 +140,17 @@
           window.Je.listSupabaseTables = window.Je.listSupabaseTables || async function() {
             return [];
           };
+          
+          // Also fix Fe object if that's the one causing the error
+          window.Fe = window.Fe || {};
+          window.Fe.listSupabaseTables = window.Fe.listSupabaseTables || async function() {
+            return [];
+          };
         }
       });
     </script>
+    
+    <!-- Comprehensive fixes for Supabase integration and Call History -->
+    <script src="/public/fix-voice-call-ai.js"></script>
   </body>
 </html>
