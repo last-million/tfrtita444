@@ -46,6 +46,42 @@ api.drive = {
       console.error(`API drive.downloadFile error for ${fileId}:`, error);
       throw error;
     }
+  },
+  
+  connect: async () => {
+    try {
+      console.log('Mock Google Drive auth connection');
+      // Simulating successful connection without redirection
+      return { 
+        data: { 
+          success: true, 
+          message: 'Successfully connected to Google Drive (mock)',
+          // Not returning authUrl to prevent redirection
+        }
+      };
+    } catch (error) {
+      console.error('API drive.connect error:', error);
+      throw error;
+    }
+  }
+};
+
+// Add vectorization API
+api.vectorizeDocuments = async (fileIds, targetTable) => {
+  try {
+    console.log('Mock vectorization request', { fileIds, targetTable });
+    // Simulate API call with a delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return {
+      data: {
+        success: true,
+        message: `Successfully vectorized ${fileIds.length} document(s) to table ${targetTable}`,
+        vectorized: fileIds.map(id => ({ id, status: 'success' }))
+      }
+    };
+  } catch (error) {
+    console.error('API vectorizeDocuments error:', error);
+    throw error;
   }
 };
 
