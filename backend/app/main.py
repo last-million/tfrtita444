@@ -1,24 +1,31 @@
-from fastapi import FastAPI, Request, HTTPException, status, Body
+from fastapi import FastAPI, Request, HTTPException, status, Body, Depends, Header
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
+import traceback
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 # Import route modules
 from .routes import auth, health, calls, credentials, dashboard, knowledge_base
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("api_debug.log")
+    ]
+)
 logger = logging.getLogger("main")
 
-# Create FastAPI app
+# Create FastAPI app with detailed documentation
 app = FastAPI(
     title="Voice Call AI API",
-    description="API for Voice Call AI application",
+    description="API for Voice Call AI application with fixed auth",
     version="1.0.0"
 )
 
@@ -30,17 +37,17 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["credent
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge", tags=["knowledge_base"])
 
-# CORS middleware setup with improved error handling
+# CORS middleware setup - Allow all origins to fix cross-domain issues
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
 
-# Add error logging middleware
+# --- Request logging middleware ---
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests and responses for debugging"""
@@ -48,113 +55,44 @@ async def log_requests(request: Request, call_next):
     client_host = request.client.host if request.client else "unknown"
     
     logger.info(f"[{request_id}] Request: {request.method} {request.url.path} from {client_host}")
+    logger.debug(f"[{request_id}] Headers: {dict(request.headers)}")
     
     try:
         # Process the request
         response = await call_next(request)
+        
+        # Log response status
         logger.info(f"[{request_id}] Response: {response.status_code}")
         return response
     except Exception as e:
         # Log any unhandled exceptions
         logger.error(f"[{request_id}] Unhandled error: {str(e)}")
+        logger.debug(f"[{request_id}] Traceback: {traceback.format_exc()}")
         
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": f"Internal server error: {str(e)}"}
         )
 
-# JWT configuration
-SECRET_KEY = "strong-secret-key-for-jwt-tokens"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# --- Error handling for common issues ---
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Custom handler for HTTP exceptions with detailed logging"""
+    logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# Direct auth token endpoint with debugging logs
-@app.post("/api/auth/token")
-async def login_for_access_token(request: Request):
-    try:
-        logger.info(f"Auth token request received with content type: {request.headers.get('content-type')}")
-        username = None
-        password = None
-        
-        content_type = request.headers.get('content-type', '')
-        
-        if 'application/json' in content_type:
-            # Handle JSON data
-            json_data = await request.json()
-            username = json_data.get('username')
-            password = json_data.get('password')
-            logger.info(f"Received JSON login request for user: {username}")
-            
-        elif 'application/x-www-form-urlencoded' in content_type or 'multipart/form-data' in content_type:
-            # Handle form data
-            form_data = await request.form()
-            username = form_data.get('username')
-            password = form_data.get('password')
-            logger.info(f"Received form login request for user: {username}")
-            
-        else:
-            # Try to handle raw body
-            body = await request.body()
-            try:
-                body_text = body.decode('utf-8')
-                logger.info(f"Raw request body: {body_text[:100]}")
-                
-                # Try to extract username and password
-                if '&' in body_text:
-                    params = {}
-                    for param in body_text.split('&'):
-                        if '=' in param:
-                            key, value = param.split('=', 1)
-                            params[key] = value
-                    
-                    username = params.get('username')
-                    password = params.get('password')
-                    logger.info(f"Extracted from raw body: username={username}")
-            except Exception as e:
-                logger.error(f"Failed to parse request body: {str(e)}")
-        
-        # Hardcoded credentials for simple testing
-        if not username or not password:
-            logger.error("Username or password missing")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username and password required"
-            )
-            
-        if username != "hamza" or password != "AFINasahbi@-11":
-            logger.error(f"Invalid credentials for user: {username}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password"
-            )
-        
-        # Generate token
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": username}, expires_delta=access_token_expires
-        )
-        
-        # Return success response
-        logger.info(f"Login successful for user: {username}")
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "username": username
-        }
-        
-    except Exception as e:
-        logger.exception(f"Login error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Server error: {str(e)}"
-        )
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Global exception handler with detailed logging"""
+    logger.error(f"Unhandled exception: {str(exc)}")
+    logger.debug(f"Traceback: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
 
 # Root endpoint
 @app.get("/")
